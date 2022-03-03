@@ -1,0 +1,6 @@
+name: marspylib
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - pyimagej
