@@ -1,4 +1,5 @@
 import pytest
+from marspylib.figure_to_imgsrc import flatten
 
 def test_flatten():
     '''Test if the test list returns the correct flattened list'''
