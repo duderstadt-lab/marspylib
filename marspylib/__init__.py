@@ -11,13 +11,13 @@ def figure_to_imgsrc(figure):
     data string. Renders the figure provided and converts the
     resulting image to a base64-encoded string with an html data
     format prefix.
-    
+
     @Author: Karl E. Duderstadt'''
     imageBytes = io.BytesIO()
     figure.savefig(imageBytes)
     imageBytes.seek(0)
     imgsrc = imagej.sj.to_java('data:image/png;base64,' + base64.b64encode(imageBytes.read()).decode("utf-8"))
-    matplotlib.pyplot.close(figure)
+    plt.close(figure)
     return imgsrc
 
 def flatten(list_to_convert):
