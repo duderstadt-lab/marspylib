@@ -70,12 +70,12 @@ def get_acceptor_donor_bleach_fret(molecule, metadata_tag_fret = 'FRET', names_b
         names of the donor and bleaching events in the archive.
         Note: names have to be entered in the specific order (Donor bleaching name, Acceptor bleaching name).
 
-    Outputs
-    T_bleach: the T-position of the bleaching point where either one of the dyes (donor or acceptor) has bleached.
-        Numerical value.
+    Outputs (tuple with the following three parameters)
+    T_bleach: the T-position of the bleaching point where there first dye has bleached. Numerical value.
+    T_second_bleach:the T-position of the bleaching point where there second dye has bleached. Numerical value.
+    dye: list with one string representing which dye is associated with the defined T_bleach
 
     @Author: Nadia M. Huisjes
-
     '''
 
     if (archive.metadataHasTag(molecule.getMetadataUID(),metadata_tag_fret)):
