@@ -33,7 +33,7 @@ If you have trouble finding the correct file path, locate the .whl file in the f
 pip install <path to the .whl file>
 '''
 
-**How to use the package**
+**How to use the package**  
 To use the package, activate the 'pyimagejMars' environment in the terminal (conda activate pyimagejMars) and launch a jupyter notebook. Open a notebook with the 'pyimagejMars' kernal and import the package similar to how you would also import other packages. For example:
 
 '''
@@ -48,7 +48,7 @@ ml.fret.get_T_bleach()
 
 Check the file structure in the github repository to find whether a function is part of the main utilities folder, or whether a subdirectory (such as 'fret') needs to be specified.
 
-**How to update**
+**How to update**  
 In case the github repository is updated, the python package should be updated as well to get access to all new features.
 
 1. Optional: manage your git status by updating your forked repository or by uploading your new function to the main repository.
@@ -65,11 +65,11 @@ pip install  <path to the .whl file>
 3b. In case the wheel file has the same name as the previous wheel file:
 '''
 pip install --force-reinstall  <path to the .whl file>
-'''
+'''  
 4. Make sure to import the package again in your active notebook.
 
 
-**How to use the unit tests**
+**How to use the unit tests**  
 In the terminal run:
 '''
 python setup.py pytest
@@ -77,5 +77,5 @@ python setup.py pytest
 
 
 
-**Source information**
+**Source information**  
 https://medium.com/analytics-vidhya/how-to-create-a-python-library-7d5aea80cc3f
