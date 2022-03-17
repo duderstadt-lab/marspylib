@@ -5,11 +5,6 @@ import seaborn as sns
 
 ## marspylib.fret
 
-def hallo_world():
-    print('hallo world fret')
-
-
-
 def get_T_bleach(molecule, metadata_tag_populations = ['FRET', 'AO', 'DO'], names_bleaching_events = ['Donor_Bleach', 'Acceptor_Bleach']):
     '''
     Function that returns the T_bleach position for a molecule.
@@ -103,3 +98,6 @@ def get_acceptor_donor_bleach_fret(molecule, metadata_tag_fret = 'FRET', names_b
                     dye = ['NaN']
 
     return (T_bleach, T_second_bleach, dye)
+
+def hallo_world():
+    print('hallo world fret')

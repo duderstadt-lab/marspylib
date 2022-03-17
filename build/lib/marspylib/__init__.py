@@ -4,9 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import math
 
-
-def hallo_world():
-    print('hallo world')
+#import marspylib.fret
 
 ## Utility functions
 
@@ -53,3 +51,6 @@ def gauss(x,mu,sigma,A):
 
     @Author: Nadia M. Huisjes'''
     return A*math.exp(-(x-mu)**2/2/sigma**2)
+
+def hallo_world():
+    print('hallo world')

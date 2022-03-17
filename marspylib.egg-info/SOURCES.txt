@@ -1,0 +1,9 @@
+LICENSE.txt
+README.md
+setup.py
+marspylib/__init__.py
+marspylib.egg-info/PKG-INFO
+marspylib.egg-info/SOURCES.txt
+marspylib.egg-info/dependency_links.txt
+marspylib.egg-info/top_level.txt
+marspylib/fret/__init__.py
