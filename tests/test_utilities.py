@@ -14,5 +14,5 @@ def test_gauss():
     x_vals = [1,2,3,200,5000]
     y_vals = []
     for x in x_vals:
-        y_vals.append(gauss(x,-20,5,0.5))
+        y_vals.append(marspylib.gauss(x,-20,5,0.5))
     assert y_vals == [7.387418011601682e-05,3.126075188741013e-05,1.2709673258099624e-05,0.0,0.0]
