@@ -1,5 +1,7 @@
 .DS_Store 
 .DS_Store? 
+marspylib.egg-info
+/.egg/
 /.eggs/
 /build/
 /dist/
