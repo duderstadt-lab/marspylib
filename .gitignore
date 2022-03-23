@@ -1,2 +1,7 @@
 .DS_Store 
 .DS_Store? 
+/.eggs/
+/build/
+/dist/
+/scyjava.egg-info/
+__pycache__/
