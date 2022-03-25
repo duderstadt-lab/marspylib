@@ -11,7 +11,7 @@ def test_figure_to_imgsrc():
     fig = plt.gcf()
     fig.set_size_inches(0.1, 0.1)
     fig.set_dpi(50)
-    assert figure_to_imgsrc(fig) == 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAcAAAAHCAYAAADEUlfTAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjUuMSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/YYfK9AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAlklEQVR4nHWOIQrCYABG32+w/EkwCAtDMCwq/00sHsLugmcYiHcwGSxL6hF+g7YNDzDQ5IqK8zPoxOKrDx7PSOIfBvDWWhdFEQCn8kZxuXIvjmck4ZyTJM23ucI41XixE+AbdSJZZySbnOEgYDbqf9O+FXQVxqkmy70e1VN6j3gk0ez0NF0dVH1ELY0kjDElkP2MtgH7Ap5xTn0Bv6XKAAAAAElFTkSuQmCC'
+    assert marspylib.figure_to_imgsrc(fig) == 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjUuMSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/YYfK9AAAACXBIWXMAAA9hAAAPYQGoP6dpAAAAs0lEQVR4nH2PrQrCUACFvzuc4HDcyaJsDyD2RR/DZFKGwXcx28Sf5LNYZIiGlTtNyoZ3SQ3XMDWJB047fHxHFEVh8jzH932EEHxijKEsSwRg+JOaUoowDMmyDOoNxsstu9MNR9w5TgdYUspqWm8w2RxILk9anmQe9yqC1hqAeLFlf33iOTarYUToVj5WEAQAJOcbLcdmPYrotuXXwVJKAeBaD2b9DkFToLXmQyZNU/N+8rMvz3xD6Fsi0vQAAAAASUVORK5CYII='
 
 def test_flatten():
     '''Test if the test list returns the correct flattened list'''
