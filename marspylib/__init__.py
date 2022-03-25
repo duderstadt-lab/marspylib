@@ -1,9 +1,8 @@
-import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
+import io
+import base64
+import sj
 import math
-
 
 def hallo_world():
     print('hallo world')
@@ -20,7 +19,7 @@ def figure_to_imgsrc(figure):
     imageBytes = io.BytesIO()
     figure.savefig(imageBytes)
     imageBytes.seek(0)
-    imgsrc = imagej.sj.to_java('data:image/png;base64,' + base64.b64encode(imageBytes.read()).decode("utf-8"))
+    imgsrc = sj.to_java('data:image/png;base64,' + base64.b64encode(imageBytes.read()).decode("utf-8"))
     plt.close(figure)
     return imgsrc
 
