@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import io
 import base64
-import sj
 import math
 
 def hallo_world():
@@ -19,7 +18,7 @@ def figure_to_imgsrc(figure):
     imageBytes = io.BytesIO()
     figure.savefig(imageBytes)
     imageBytes.seek(0)
-    imgsrc = sj.to_java('data:image/png;base64,' + base64.b64encode(imageBytes.read()).decode("utf-8"))
+    imgsrc = 'data:image/png;base64,' + base64.b64encode(imageBytes.read()).decode("utf-8")
     plt.close(figure)
     return imgsrc
 
