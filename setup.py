@@ -4,7 +4,7 @@ from os import path
 setup(
     name='marspylib',
     packages=find_packages(),
-    version="0.1.0",
+    version="0.1.1",
     description='Library containing python functions to interact with Mars Archives',
     author='Karl Duderstadt, Nadia Huisjes, Thomas Retzer',
     url='https://github.com/duderstadt-lab/marspylib',
