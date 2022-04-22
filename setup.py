@@ -10,7 +10,6 @@ setup(
     url='https://github.com/duderstadt-lab/marspylib',
     install_requires=[],
     scripts=['bin/launchFiji'],
-    setup_requires=['pytest-runner'],
     tests_requires=['pytest'],
     test_suite='tests'
 )
