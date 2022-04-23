@@ -10,15 +10,20 @@ import matplotlib
 from jpype import setupGuiEnvironment, JImplements, JOverride
 import traceback
 
-parser = argparse.ArgumentParser(description='Launches Fiji from python using PyImageJ. Requires the Fiji directory as an input. Provides support for Conda Python 3 scripting in the launched Fiji.')
-parser.add_argument("path_to_Fiji", help="The file path for Fiji.app directory.")
+parser = argparse.ArgumentParser(description=
+    """ Launches Fiji from python using PyImageJ. Requires the Fiji directory
+    as an input. Provides support for Conda Python 3 scripting in the launched Fiji.
+    """)
+
+parser.add_argument("path_to_Fiji", help="The file path to the Fiji.app directory.")
 args = parser.parse_args()
 
-print(args.path_to_Fiji)
+print('Launching Fiji from ', args.path_to_Fiji)
 
 if not os.path.exists(args.path_to_Fiji):
         raise argparse.ArgumentTypeError("{0} does not exist".format(args.path_to_Fiji))
 
+#Disable python gui in matplotlib. Not available when starting Fiji with this approach.
 matplotlib.use('agg')
 
 imagej._create_jvm(args.path_to_Fiji, mode=imagej.Mode.GUI, add_legacy=True)
