@@ -5,7 +5,7 @@ setup(
     name='marspylib',
     packages=find_packages(),
     platforms=['any'],
-    version="0.1.3",
+    version="0.1.4",
     description='Library containing python Fiji launcher and python functions to interact with Mars Archives',
     author='Karl Duderstadt, Nadia Huisjes, Thomas Retzer',
     url='https://github.com/duderstadt-lab/marspylib',
