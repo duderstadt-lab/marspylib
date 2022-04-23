@@ -3,9 +3,6 @@ import io
 import base64
 import math
 
-def hallo_world():
-    print('hallo world')
-
 ## Utility functions
 
 def figure_to_imgsrc(figure):

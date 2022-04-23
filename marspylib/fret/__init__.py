@@ -1,8 +1,5 @@
 import numpy as np
 
-def hallo_world():
-    print('hallo world fret')
-
 ## marspylib.fret
 
 def get_T_bleach(molecule, metadata_tag_populations = ['FRET', 'AO', 'DO'], names_bleaching_events = ['Donor_Bleach', 'Acceptor_Bleach']):
