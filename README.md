@@ -36,6 +36,56 @@ molecule = archive["some-uid"]     # random access by UID
 archive.save("experiment_out.yama")
 ```
 
+### Creating a new archive
+
+You don't need Fiji to build a `.yama` from scratch — construct
+`Properties`, a `Molecule` (or one of its subclasses, matching the archive
+type — see [Supported archive types](#supported-archive-types)), and
+`MarsMetadata`/regions/positions as needed, then `put()` each record into a
+fresh `Archive` and save:
+
+```python
+import pandas as pd
+import marspylib.yama as yama
+
+properties = yama.Properties(archive_type=yama.ARCHIVE_TYPES["SingleMoleculeArchive"])
+archive = yama.Archive(properties, metadata={}, molecules={})
+
+metadata = yama.MarsMetadata(microscope="Nikon Ti2", source_directory="/data/2024-01-15")
+archive.put_metadata(metadata)
+
+for i in range(3):
+    molecule = yama.SingleMolecule(metadata_uid=metadata.uid)
+    molecule.add_tag("accepted")
+    molecule.parameters["dwell"] = 5.5
+    molecule.table = pd.DataFrame({
+        "T": [0.0, 1.0, 2.0],
+        "Intensity": [10.1 + i, 10.5 + i, 10.9 + i],
+    })
+    archive.put(molecule)   # molecule.uid was auto-generated -- see below
+
+archive.save("new_experiment.yama")
+```
+
+Leaving `uid` unset when constructing a `Molecule`/`MarsMetadata` (as above)
+auto-generates one in mars-core's own format — the same Base58 encoding of a
+random UUID that Fiji itself uses (`MarsMath.getUUID58()`), so records you
+create in Python get UIDs that are unique right alongside ones created in
+Fiji, which matters if the two ever get merged into the same archive. You
+can also call the generator directly, or supply your own `uid=`:
+
+```python
+yama.new_molecule_uid()    # e.g. "8eoHfZ1GdvNBeWGNNDY3hp" -- full-length
+yama.new_metadata_uid()    # e.g. "mnAgQYYn63" -- fixed 10 characters, matching mars-core
+
+molecule = yama.SingleMolecule(uid="my-own-id")   # or supply your own
+```
+
+`yama.ARCHIVE_TYPES` maps every supported short name (`SingleMoleculeArchive`,
+`DnaMoleculeArchive`, `DefaultMoleculeArchive`, `ObjectArchive`,
+`TransverseFlowArchive`) to the archive-type string mars-core expects — use
+whichever matches the `Molecule` subclass you're building records with.
+
 ### Virtual archives (`.yama.store`)
 
 Large archives saved from Fiji as a `.yama.store` directory (rather than a

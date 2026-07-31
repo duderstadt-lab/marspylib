@@ -25,6 +25,7 @@ from pathlib import Path
 
 from .errors import SmileFormatError, UnsupportedSchemaError, YamaFormatError
 from .model import (
+    ARCHIVE_TYPES,
     Archive,
     DefaultMolecule,
     DnaMolecule,
@@ -41,6 +42,7 @@ from .model import (
     SingleMolecule,
     TransverseFlowMolecule,
 )
+from .uid import new_metadata_uid, new_molecule_uid
 
 
 def open(path: str | Path) -> Archive:
@@ -70,9 +72,10 @@ def write(archive: Archive, path: str | Path) -> None:
 __all__ = [
     "open", "write",
     "Archive", "Molecule", "MarsMetadata", "MarsRegion", "MarsPosition",
-    "MarsBdvSource", "MarsDocument", "Properties",
+    "MarsBdvSource", "MarsDocument", "Properties", "ARCHIVE_TYPES",
     "SingleMolecule", "DnaMolecule", "DefaultMolecule",
     "MartianObject", "PeakShape",
     "TransverseFlowMolecule", "ReplicationForkShape",
+    "new_molecule_uid", "new_metadata_uid",
     "YamaFormatError", "SmileFormatError", "UnsupportedSchemaError",
 ]

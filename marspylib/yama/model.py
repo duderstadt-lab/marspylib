@@ -15,6 +15,13 @@ type-specific fields to any of these later (as it already has for
 an additive change here too, not a restructuring. `ARCHIVE_TO_MOLECULE_CLASS`
 is what `io/molecule.py` uses to pick which class to build for a given
 archive.
+
+`Molecule`/`MarsMetadata` (and their subclasses) auto-generate a UID in
+mars-core's own format if none is given -- matching mars-core's own
+no-arg constructors, which do exactly this (AbstractMolecule.java:96,
+AbstractMarsMetadata.java:101). Parsing an existing archive still generates
+one of these per record, immediately overwritten by the real UID read from
+the file -- wasteful, but that's what the Java constructors do too.
 """
 
 from __future__ import annotations
@@ -24,6 +31,8 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import pandas as pd
+
+from .uid import new_metadata_uid, new_molecule_uid
 
 DEFAULT_ARCHIVE_TYPE = "de.mpg.biochem.mars.molecule.SingleMoleculeArchive"
 CURRENT_SCHEMA = "2022-04-11"
@@ -130,6 +139,7 @@ class MarsRecord:
 
 @dataclass
 class Molecule(MarsRecord):
+    uid: str = field(default_factory=new_molecule_uid)
     table: pd.DataFrame = field(default_factory=pd.DataFrame)
     metadata_uid: str = ""
     image: int = -1
@@ -209,6 +219,7 @@ ARCHIVE_TO_MOLECULE_CLASS = {
 
 @dataclass
 class MarsMetadata(MarsRecord):
+    uid: str = field(default_factory=new_metadata_uid)
     microscope: str = "unknown"
     source_directory: str = "unknown"
     log: str = ""

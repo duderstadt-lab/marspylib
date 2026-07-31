@@ -104,3 +104,19 @@ share with several others in this format. Note
 `parentalIntensity`/`leadingIntensity` use `"x"` -- a real quirk in the Java
 source (`ReplicationForkShape.java`), not a typo, and the Python reader/
 writer (`marspylib/yama/io/transverseflow.py`) replicates it exactly.
+
+## UID generation (`GenUID.java`)
+
+Not a `.yama` fixture generator -- prints the real `com.chrylis:base58-codec`
+library's output (via `MarsMath.getUUID58()` and `Base58UUID.encode(UUID)`
+directly, for controlled edge-case inputs like an all-zero UUID and one with
+a leading zero byte) so `marspylib/yama/uid.py`'s from-scratch reimplementation
+(no source was available locally for this small third-party library, only the
+compiled jar, so it was verified by disassembly + cross-checking outputs) can
+be checked byte-for-byte. `tests/yama/test_uid.py` embeds the resulting
+input/output pairs as a permanent regression test.
+
+```bash
+javac -cp "$CP" -d out GenUID.java
+java -cp "$CP:out" gen.GenUID
+```
