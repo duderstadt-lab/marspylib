@@ -1,17 +1,40 @@
+import base64
 import pytest
 import marspylib
 import matplotlib.pyplot as plt
 
-## To add: unit tests figure_to_imgsrc(), gauss()
+## To add: unit tests gauss()
 
 def test_figure_to_imgsrc():
-    '''Test if the generated figure is correctly converted to an img src data string'''
+    '''Test if the generated figure is correctly converted to an img src data string.
+
+    Only checks the data-URI framing and that the payload decodes to a valid
+    PNG of the expected pixel dimensions -- not an exact byte match, since
+    matplotlib embeds its own version string in the PNG metadata, which
+    would otherwise make this test fail on every matplotlib upgrade.
+    '''
     plt.plot([1, 2, 3, 4])
     plt.ylabel('some numbers')
     fig = plt.gcf()
     fig.set_size_inches(0.1, 0.1)
     fig.set_dpi(50)
-    assert marspylib.figure_to_imgsrc(fig) == 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjUuMSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/YYfK9AAAACXBIWXMAAA9hAAAPYQGoP6dpAAAAs0lEQVR4nH2PrQrCUACFvzuc4HDcyaJsDyD2RR/DZFKGwXcx28Sf5LNYZIiGlTtNyoZ3SQ3XMDWJB047fHxHFEVh8jzH932EEHxijKEsSwRg+JOaUoowDMmyDOoNxsstu9MNR9w5TgdYUspqWm8w2RxILk9anmQe9yqC1hqAeLFlf33iOTarYUToVj5WEAQAJOcbLcdmPYrotuXXwVJKAeBaD2b9DkFToLXmQyZNU/N+8rMvz3xD6Fsi0vQAAAAASUVORK5CYII='
+    imgsrc = marspylib.figure_to_imgsrc(fig)
+
+    prefix = 'data:image/png;base64,'
+    assert imgsrc.startswith(prefix)
+
+    png_bytes = base64.b64decode(imgsrc[len(prefix):])
+    assert png_bytes.startswith(b'\x89PNG\r\n\x1a\n')
+    assert png_bytes.endswith(b'IEND\xaeB`\x82')
+
+    # IHDR chunk (right after the 8-byte signature and 4-byte length + "IHDR")
+    # holds width/height as two big-endian uint32s. Exact pixel count from a
+    # 0.1in x 0.1in @ 50dpi figure varies slightly by matplotlib version
+    # (rounding/padding), so just check it rendered as a small square image.
+    width = int.from_bytes(png_bytes[16:20], 'big')
+    height = int.from_bytes(png_bytes[20:24], 'big')
+    assert width == height
+    assert 0 < width <= 20
 
 def test_flatten():
     '''Test if the test list returns the correct flattened list'''
