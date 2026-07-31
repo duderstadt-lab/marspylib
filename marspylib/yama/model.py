@@ -291,9 +291,50 @@ class Archive:
     def contains_metadata(self, uid: str) -> bool:
         return uid in self._metadata
 
+    def metadata_tags(self, uid: str) -> list[str]:
+        """Tags for a metadata record, without necessarily loading the full
+        record -- see molecule_tags()."""
+        tags_for = getattr(self._metadata, "tags_for", None)
+        if tags_for is not None:
+            return tags_for(uid)
+        meta = self._metadata.get(uid)
+        return list(meta.tags) if meta is not None else []
+
     def metadata_has_tag(self, metadata_uid: str, tag: str) -> bool:
-        meta = self._metadata.get(metadata_uid)
-        return meta is not None and meta.has_tag(tag)
+        return tag in self.metadata_tags(metadata_uid)
+
+    def molecule_tags(self, uid: str) -> list[str]:
+        """Tags for a molecule, without necessarily loading the full record.
+        For a .yama.store opened with an index, this is index-only and
+        genuinely avoids a disk read; for a single-file archive, or a record
+        that's already loaded/cached/put() in this session, it's just
+        reading the in-memory object -- also cheap, nothing to gain by
+        avoiding it. Falls back to a full load only when neither applies
+        (e.g. a virtual store opened without an index)."""
+        tags_for = getattr(self._molecules, "tags_for", None)
+        return tags_for(uid) if tags_for is not None else list(self[uid].tags)
+
+    def molecule_channel(self, uid: str) -> int:
+        """A molecule's channel, without necessarily loading the full record."""
+        channel_for = getattr(self._molecules, "channel_for", None)
+        return channel_for(uid) if channel_for is not None else self[uid].channel
+
+    def molecule_image(self, uid: str) -> int:
+        """A molecule's image index, without necessarily loading the full record."""
+        image_for = getattr(self._molecules, "image_for", None)
+        return image_for(uid) if image_for is not None else self[uid].image
+
+    def molecule_metadata_uid(self, uid: str) -> str | None:
+        """The metadata_uid a molecule links to, without necessarily loading
+        the full record."""
+        metadata_uid_for = getattr(self._molecules, "metadata_uid_for", None)
+        return metadata_uid_for(uid) if metadata_uid_for is not None else self[uid].metadata_uid
+
+    def molecule_has_tag(self, uid: str, tag: str) -> bool:
+        return tag in self.molecule_tags(uid)
+
+    def molecule_has_tags(self, uid: str) -> bool:
+        return bool(self.molecule_tags(uid))
 
     @property
     def is_virtual(self) -> bool:

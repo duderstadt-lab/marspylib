@@ -230,6 +230,23 @@ usually just a plain attribute you can read or assign directly.
 | `archive.getMetadataUIDs()` | `archive.metadata_uids()` |
 | `archive.isVirtual()` | `archive.is_virtual` (attribute) |
 | `archive.getComments()` / `setComments(s)` | `archive.get_comments()` / `archive.set_comments(s)` |
+| `archive.getTagList(uid)` / `getTagSet(uid)` | `archive.molecule_tags(uid)` |
+| `archive.getChannel(uid)` | `archive.molecule_channel(uid)` |
+| `archive.getImage(uid)` | `archive.molecule_image(uid)` |
+| `archive.getMetadataUIDforMolecule(uid)` | `archive.molecule_metadata_uid(uid)` |
+| `archive.moleculeHasTag(uid, tag)` | `archive.molecule_has_tag(uid, tag)` |
+| `archive.moleculeHasTags(uid)` / `moleculeHasNoTags(uid)` | `archive.molecule_has_tags(uid)` |
+| `archive.getMetadataTagList(uid)` / `getMetadataTagSet(uid)` | `archive.metadata_tags(uid)` |
+
+The `molecule_*`/`metadata_*` lookups above are the same "don't load the full
+record just to check one field" trick Java gets from its index: for a
+`.yama.store` opened with an `indexes.sml` present, they answer from that
+index alone (tags/channel/image/metadata linkage only — not parameters,
+regions, positions, or the table, which aren't indexed in mars-core either).
+For a single-file archive, or a record you've already loaded/`put()` in this
+session, they just read the in-memory object directly, which is equally
+cheap. `archive[uid].tags` etc. still works too, of course — it's just not
+free for a not-yet-touched `.yama.store` record the way these are.
 
 **`Molecule` / `MarsRecord`** (`de.mpg.biochem.mars.molecule.Molecule`, `MarsRecord`)
 

@@ -18,6 +18,7 @@ like a tiny single-file .yama.
 from __future__ import annotations
 
 from collections import OrderedDict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..errors import YamaFormatError
@@ -71,14 +72,25 @@ def _scan_uids(directory: Path, ext: str) -> list[str]:
     return sorted(p.name[:-len(ext)] for p in directory.iterdir() if p.name.endswith(ext))
 
 
-def _read_index(reader: SmileReader) -> tuple[list[str], list[str]]:
+@dataclass
+class MoleculeIndexEntry:
+    """The denormalized per-molecule data AbstractMoleculeArchiveIndex keeps
+    for predicate-pushdown lookups (tags/channel/image/metadataUID) without
+    needing to load the full record -- mirrors what mars-core's index
+    actually carries (see AbstractMoleculeArchiveIndex.addMolecule)."""
+    tags: list[str] = field(default_factory=list)
+    channel: int = -1
+    image: int = -1
+    metadata_uid: str | None = None
+
+
+def _read_index(reader: SmileReader) -> tuple[dict[str, list[str]], dict[str, MoleculeIndexEntry]]:
     """Parses indexes.<ext> (AbstractMoleculeArchiveIndex.createIOMaps: a root
-    object with "metadata" and "molecules" arrays). Only the UID lists are
-    kept -- the denormalized tags/channel/image/metadataUID fields exist in
-    mars-core purely for predicate pushdown, which this port doesn't
-    implement yet; they're skipped rather than guessed at."""
-    molecule_uids: list[str] = []
-    metadata_uids: list[str] = []
+    object with "metadata" and "molecules" arrays). Returns
+    (metadata_index: uid -> tags, molecule_index: uid -> MoleculeIndexEntry),
+    both insertion-ordered (Python dicts preserve this) matching file order."""
+    metadata_index: dict[str, list[str]] = {}
+    molecule_index: dict[str, MoleculeIndexEntry] = {}
 
     while True:
         tok = reader.next_token()
@@ -89,34 +101,75 @@ def _read_index(reader: SmileReader) -> tuple[list[str], list[str]]:
         name = reader.current_name()
         reader.next_token()  # advance onto the array's START_ARRAY
         if name == "metadata":
-            metadata_uids.extend(_read_index_entries(reader))
+            metadata_index.update(_read_metadata_index_entries(reader))
         elif name == "molecules":
-            molecule_uids.extend(_read_index_entries(reader))
+            molecule_index.update(_read_molecule_index_entries(reader))
         else:
             reader.skip_value()
 
-    return molecule_uids, metadata_uids
+    return metadata_index, molecule_index
 
 
-def _read_index_entries(reader: SmileReader) -> list[str]:
-    uids = []
+def _read_metadata_index_entries(reader: SmileReader) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
     while True:
         tok = reader.next_token()
         if tok == SmileToken.END_ARRAY:
-            return uids
+            return result
         uid = None
+        tags: list[str] = []
         while True:
             tok2 = reader.next_token()
             if tok2 == SmileToken.END_OBJECT:
                 break
-            field = reader.current_name()
+            field_name = reader.current_name()
             reader.next_token()
-            if field == "uid":
+            if field_name == "uid":
                 uid = reader.get_text()
+            elif field_name == "tags":
+                while True:
+                    tok3 = reader.next_token()
+                    if tok3 == SmileToken.END_ARRAY:
+                        break
+                    tags.append(reader.get_text())
             else:
                 reader.skip_value()
         if uid is not None:
-            uids.append(uid)
+            result[uid] = tags
+
+
+def _read_molecule_index_entries(reader: SmileReader) -> dict[str, MoleculeIndexEntry]:
+    result: dict[str, MoleculeIndexEntry] = {}
+    while True:
+        tok = reader.next_token()
+        if tok == SmileToken.END_ARRAY:
+            return result
+        uid = None
+        entry = MoleculeIndexEntry()
+        while True:
+            tok2 = reader.next_token()
+            if tok2 == SmileToken.END_OBJECT:
+                break
+            field_name = reader.current_name()
+            value_tok = reader.next_token()
+            if field_name == "uid":
+                uid = reader.get_text()
+            elif field_name == "metadataUID":
+                entry.metadata_uid = reader.get_text() if value_tok == SmileToken.VALUE_STRING else None
+            elif field_name == "tags":
+                while True:
+                    tok3 = reader.next_token()
+                    if tok3 == SmileToken.END_ARRAY:
+                        break
+                    entry.tags.append(reader.get_text())
+            elif field_name == "channel":
+                entry.channel = reader.get_int()
+            elif field_name == "image":
+                entry.image = reader.get_int()
+            else:
+                reader.skip_value()
+        if uid is not None:
+            result[uid] = entry
 
 
 class _LazyMoleculeMap:
@@ -133,7 +186,8 @@ class _LazyMoleculeMap:
     read. This is also how a brand-new UID gets added to the archive."""
 
     def __init__(self, molecules_dir: Path, archive_type: str, uids: list[str],
-                 cache_size: int = DEFAULT_MOLECULE_CACHE_SIZE):
+                 cache_size: int = DEFAULT_MOLECULE_CACHE_SIZE,
+                 index: dict[str, MoleculeIndexEntry] | None = None):
         self._dir = molecules_dir
         self._archive_type = archive_type
         self._uids = uids
@@ -141,6 +195,13 @@ class _LazyMoleculeMap:
         self._cache: "OrderedDict[str, Molecule]" = OrderedDict()
         self._cache_size = cache_size
         self._overrides: dict[str, Molecule] = {}
+        # From indexes.<ext> if one was present at open time -- lets
+        # tags_for()/channel_for()/etc. answer without loading the full
+        # record. Never rewritten after open (put()/remove() invalidate the
+        # relevant entry instead of trying to patch it), and entirely absent
+        # when the store had no index file to begin with (directory-scan
+        # fallback), in which case every lookup just falls back to a load.
+        self._index: dict[str, MoleculeIndexEntry] = index or {}
 
     def _load(self, uid: str) -> Molecule:
         path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
@@ -167,6 +228,10 @@ class _LazyMoleculeMap:
             self._uids.append(uid)
         self._overrides[uid] = molecule
         self._cache.pop(uid, None)
+        # The old index entry (if any) no longer reflects this molecule's
+        # current tags/channel/image -- drop it so lookups fall back to the
+        # override object itself instead of serving stale data.
+        self._index.pop(uid, None)
 
     def __delitem__(self, uid: str) -> None:
         """Matches mars-core's remove(): deletes the underlying .sml file
@@ -178,6 +243,7 @@ class _LazyMoleculeMap:
         self._uids.remove(uid)
         self._cache.pop(uid, None)
         self._overrides.pop(uid, None)
+        self._index.pop(uid, None)
         path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
         if path.exists():
             path.unlink()
@@ -208,6 +274,59 @@ class _LazyMoleculeMap:
         except KeyError:
             return default
 
+    # -- predicate-pushdown lookups: answer from the index when possible,
+    # without loading the full record. Priority is overrides > cache > index
+    # > full load: anything already resident in memory is more current than
+    # a (possibly stale, e.g. after a put() elsewhere) index entry.
+
+    def tags_for(self, uid: str) -> list[str]:
+        if uid not in self._uid_set:
+            raise KeyError(uid)
+        if uid in self._overrides:
+            return list(self._overrides[uid].tags)
+        if uid in self._cache:
+            return list(self._cache[uid].tags)
+        entry = self._index.get(uid)
+        if entry is not None:
+            return list(entry.tags)
+        return list(self[uid].tags)
+
+    def channel_for(self, uid: str) -> int:
+        if uid not in self._uid_set:
+            raise KeyError(uid)
+        if uid in self._overrides:
+            return self._overrides[uid].channel
+        if uid in self._cache:
+            return self._cache[uid].channel
+        entry = self._index.get(uid)
+        if entry is not None:
+            return entry.channel
+        return self[uid].channel
+
+    def image_for(self, uid: str) -> int:
+        if uid not in self._uid_set:
+            raise KeyError(uid)
+        if uid in self._overrides:
+            return self._overrides[uid].image
+        if uid in self._cache:
+            return self._cache[uid].image
+        entry = self._index.get(uid)
+        if entry is not None:
+            return entry.image
+        return self[uid].image
+
+    def metadata_uid_for(self, uid: str) -> str | None:
+        if uid not in self._uid_set:
+            raise KeyError(uid)
+        if uid in self._overrides:
+            return self._overrides[uid].metadata_uid
+        if uid in self._cache:
+            return self._cache[uid].metadata_uid
+        entry = self._index.get(uid)
+        if entry is not None:
+            return entry.metadata_uid
+        return self[uid].metadata_uid
+
 
 class _LazyMetadataMap:
     """Matches mars-core: once loaded, a metadata record stays resident for
@@ -217,11 +336,13 @@ class _LazyMetadataMap:
     a cache write -- no separate override/pin tier is needed like it is for
     `_LazyMoleculeMap`."""
 
-    def __init__(self, metadata_dir: Path, uids: list[str]):
+    def __init__(self, metadata_dir: Path, uids: list[str],
+                 index: dict[str, list[str]] | None = None):
         self._dir = metadata_dir
         self._uids = uids
         self._uid_set = set(uids)
         self._cache: dict[str, MarsMetadata] = {}
+        self._index: dict[str, list[str]] = index or {}  # uid -> tags, from indexes.<ext>
 
     def _load(self, uid: str) -> MarsMetadata:
         path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
@@ -240,6 +361,7 @@ class _LazyMetadataMap:
             self._uid_set.add(uid)
             self._uids.append(uid)
         self._cache[uid] = metadata
+        self._index.pop(uid, None)
 
     def __delitem__(self, uid: str) -> None:
         """Matches mars-core's removeMetadata(): deletes the underlying
@@ -249,6 +371,7 @@ class _LazyMetadataMap:
         self._uid_set.discard(uid)
         self._uids.remove(uid)
         self._cache.pop(uid, None)
+        self._index.pop(uid, None)
         path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
         if path.exists():
             path.unlink()
@@ -279,6 +402,16 @@ class _LazyMetadataMap:
         except KeyError:
             return default
 
+    def tags_for(self, uid: str) -> list[str]:
+        if uid not in self._uid_set:
+            raise KeyError(uid)
+        if uid in self._cache:  # never evicted, so if present it's authoritative
+            return list(self._cache[uid].tags)
+        entry = self._index.get(uid)
+        if entry is not None:
+            return list(entry)
+        return list(self[uid].tags)
+
 
 def open_virtual_store(store_dir: Path, molecule_cache_size: int = DEFAULT_MOLECULE_CACHE_SIZE) -> Archive:
     ext = _detect_extension(store_dir)
@@ -295,16 +428,22 @@ def open_virtual_store(store_dir: Path, molecule_cache_size: int = DEFAULT_MOLEC
     molecules_dir = store_dir / MOLECULES_SUBDIRECTORY_NAME
     metadata_dir = store_dir / METADATA_SUBDIRECTORY_NAME
     if index_path.exists():
-        molecule_uids, metadata_uids = _read_index(_read_document_root(index_path.read_bytes()))
+        metadata_index, molecule_index = _read_index(_read_document_root(index_path.read_bytes()))
+        molecule_uids = list(molecule_index.keys())
+        metadata_uids = list(metadata_index.keys())
     else:
         # mars-core rebuilds the index here by fully loading every record;
-        # this just scans filenames instead and lets records load lazily.
+        # this just scans filenames instead and lets records load lazily --
+        # so tags_for()/channel_for()/etc. have no index to answer from and
+        # fall back to a full load until the next save() rewrites indexes.<ext>.
         molecule_uids = _scan_uids(molecules_dir, ext)
         metadata_uids = _scan_uids(metadata_dir, ext)
+        molecule_index = {}
+        metadata_index = {}
 
     molecules = _LazyMoleculeMap(molecules_dir, properties.archive_type, molecule_uids,
-                                  cache_size=molecule_cache_size)
-    metadata = _LazyMetadataMap(metadata_dir, metadata_uids)
+                                  cache_size=molecule_cache_size, index=molecule_index)
+    metadata = _LazyMetadataMap(metadata_dir, metadata_uids, index=metadata_index)
 
     return Archive(properties, metadata, molecules, source_path=store_dir)
 
