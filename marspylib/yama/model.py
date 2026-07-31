@@ -202,8 +202,21 @@ class Archive:
         return meta is not None and meta.has_tag(tag)
 
     def save(self, path: str | Path | None = None) -> None:
+        """Write this archive as a single-file .yama. If `path` is omitted,
+        reuses the path it was opened from -- except for a .yama.store
+        virtual archive, where writing is not yet supported and an explicit
+        single-file `path` must be given (which "flattens" the store into
+        one .yama, lazily loading every record along the way)."""
         from .io.archive import write_archive_document
         from .smile.writer import SmileWriter
+
+        if path is None and self._source_path is not None and self._source_path.is_dir():
+            raise ValueError(
+                "this archive was opened from a .yama.store virtual archive; "
+                "writing back to a virtual store is not supported yet -- pass an "
+                "explicit single-file path (e.g. archive.save('out.yama')) to "
+                "flatten it into one .yama file instead"
+            )
 
         target = Path(path) if path is not None else self._source_path
         if target is None:

@@ -30,11 +30,18 @@ from .model import (
 
 
 def open(path: str | Path) -> Archive:
-    """Read a single-file .yama archive into memory."""
+    """Read a .yama archive into memory, or lazily open a .yama.store
+    virtual archive (a directory of per-record files) -- dispatched on
+    whether `path` is a directory."""
+    from .io.store import is_virtual_store, open_virtual_store
+
+    p = Path(path)
+    if is_virtual_store(p):
+        return open_virtual_store(p)
+
     from .io.archive import read_archive_document
     from .smile.reader import SmileReader
 
-    p = Path(path)
     reader = SmileReader(p.read_bytes())
     archive = read_archive_document(reader)
     archive._source_path = p

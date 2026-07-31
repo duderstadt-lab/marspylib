@@ -18,6 +18,14 @@ import java.io.File;
 public class GenArchive {
     static final String OUT_DIR = "/private/tmp/claude-501/-Users-karlduderstadt-git-mars-fx/0161c3d7-5955-42d8-a16a-4408bfda2873/scratchpad/smile-fixtures";
 
+    static void deleteRecursively(File f) {
+        if (f.isDirectory()) {
+            File[] children = f.listFiles();
+            if (children != null) for (File c : children) deleteRecursively(c);
+        }
+        f.delete();
+    }
+
     static MarsTable buildTable() {
         MarsTable table = new MarsTable("mol table");
         DoubleColumn t = new DoubleColumn("T");
@@ -63,8 +71,22 @@ public class GenArchive {
         mol2.setMetadataUID("meta1");
         archive.put(mol2);
 
+        SingleMolecule mol3 = new SingleMolecule("mol3", buildTable());
+        mol3.setMetadataUID("meta1");
+        mol3.addTag("accepted");
+        mol3.addTag("reviewed");
+        mol3.setChannel(2);
+        mol3.setParameter("dwell", 9.25);
+        archive.put(mol3);
+
         archive.saveAs(new File(OUT_DIR, "single_molecule_archive.yama"));
         System.out.println("wrote single_molecule_archive.yama, molecules=" + archive.getNumberOfMolecules());
+
+        // ---- Virtual store (.yama.store), same in-memory archive ----
+        File storeDir = new File(OUT_DIR, "single_molecule_archive.yama.store");
+        deleteRecursively(storeDir);
+        archive.saveAsVirtualStore(storeDir);
+        System.out.println("wrote single_molecule_archive.yama.store");
 
         // ---- DnaMoleculeArchive ----
         DnaMoleculeArchive dnaArchive = new DnaMoleculeArchive("test_dna.yama");

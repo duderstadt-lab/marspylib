@@ -50,7 +50,18 @@ mkdir -p out
 javac -cp "$CP" -d out GenTable.java GenArchive.java
 java -cp "$CP:out" gen.GenTable    # -> mars_table.bin, mars_table_empty.bin (copy into ../table/)
 java -cp "$CP:out" gen.GenArchive  # -> single/dna/default_molecule_archive.yama, empty_archive.yama (copy into ../yama/)
+                                    # -> single_molecule_archive.yama.store/ (copy into ../yama_store/)
 ```
+
+`GenArchive.java`'s `SingleMoleculeArchive` (3 molecules: `mol1`, `mol2`, `mol3`) is saved twice from
+the same in-memory archive — once as a single-file `.yama` via `saveAs(File)`, once as a
+`.yama.store` virtual directory via `saveAsVirtualStore(File)` — so the single-file and
+virtual-store fixtures for `single_molecule_archive` stay in sync with each other.
+
+**Do not open these fixture files in Fiji/Mars Rover to poke at them** — Rover writes a
+`.yama.store`-adjacent `.rover` window-state file and can resave the archive on close (this
+already happened once and silently added a stray tag to a committed fixture, breaking tests
+that assert exact tag/parameter sets). If you need to inspect one, copy it out of the repo first.
 
 `ReadPython.java` (also in this directory) is not a fixture generator — it's
 the harness used to confirm real mars-core can read a `.yama` file written

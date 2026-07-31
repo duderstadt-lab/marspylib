@@ -15,9 +15,9 @@ def test_single_molecule_archive():
 
     assert archive.properties.archive_type == "de.mpg.biochem.mars.molecule.SingleMoleculeArchive"
     assert archive.properties.schema == "2022-04-11"
-    assert archive.properties.number_of_molecules == 2
-    assert len(archive) == 2
-    assert "mol1" in archive and "mol2" in archive
+    assert archive.properties.number_of_molecules == 3
+    assert len(archive) == 3
+    assert "mol1" in archive and "mol2" in archive and "mol3" in archive
 
     mol1 = archive["mol1"]
     assert mol1.tags == ["accepted"]
@@ -46,6 +46,11 @@ def test_single_molecule_archive():
     assert mol2.tags == [] and mol2.parameters == {}
     assert len(mol2.table.columns) == 0
 
+    mol3 = archive["mol3"]
+    assert mol3.tags == ["accepted", "reviewed"]
+    assert mol3.channel == 2
+    assert mol3.parameters["dwell"] == 9.25
+
     metas = list(archive.metadata)
     assert len(metas) == 1
     meta = metas[0]
@@ -57,8 +62,8 @@ def test_single_molecule_archive():
     assert not archive.metadata_has_tag("meta1", "nope")
 
     props = archive.properties
-    assert props.tag_set == {"accepted"}
-    assert props.channel_set == {1}
+    assert props.tag_set == {"accepted", "reviewed"}
+    assert props.channel_set == {1, 2}
     assert props.table_column_set == {"T", "Intensity", "label"}
     assert props.parameter_set == {"dwell", "label", "flag", "nan_val", "inf_val"}
     assert props.region_set == {"r1"}

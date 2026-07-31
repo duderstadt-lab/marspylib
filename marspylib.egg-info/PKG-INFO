@@ -1,12 +1,17 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: marspylib
 Version: 0.2.0
 Summary: Pure-Python library for reading and writing Mars Molecule Archives (.yama) and utility functions for working with them
 Home-page: https://github.com/duderstadt-lab/marspylib
 Author: Karl Duderstadt, Nadia Huisjes, Thomas Retzer
-License: UNKNOWN
 Platform: any
 License-File: LICENSE.txt
-
-UNKNOWN
-
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: matplotlib
+Dynamic: author
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: platform
+Dynamic: requires-dist
+Dynamic: summary

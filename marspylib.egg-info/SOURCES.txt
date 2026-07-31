@@ -27,3 +27,5 @@ marspylib/yama/smile/reader.py
 marspylib/yama/smile/shared_names.py
 marspylib/yama/smile/vint.py
 marspylib/yama/smile/writer.py
+tests/test_fret.py
+tests/test_utilities.py
