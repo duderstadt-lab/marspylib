@@ -54,7 +54,8 @@ def test_location_combined_url_round_trip():
     url = "https://my-bucket.s3.serveraddress/path/to/file.yama"
     location = S3Location.from_url(url)
     assert location.bucket == "my-bucket"
-    assert location.server_address == "s3.serveraddress"
+    # the ".s3." in the URL is a fixed separator, not part of the real host
+    assert location.server_address == "serveraddress"
     assert location.key == "path/to/file.yama"
     assert location.virtual_hosted_url == url
 
@@ -99,7 +100,13 @@ def test_open_s3_single_file_with_separate_fields(bucket):
 def test_open_s3_single_file_with_combined_url(bucket):
     bucket.upload_file(str(SINGLE_FILE), BUCKET, "path/to/experiment.yama")
 
-    url = f"https://{BUCKET}.{SERVER_ADDRESS}/path/to/experiment.yama"
+    # SERVER_ADDRESS is itself "s3.amazonaws.com" -- real AWS's endpoint host
+    # happens to start with "s3." (see s3.py's module docstring) -- so the
+    # combined URL's own ".s3." separator on top of that really does produce
+    # "s3.s3.amazonaws.com" here; parsing strips the separator back off,
+    # leaving server_address == SERVER_ADDRESS, matching what `bucket` (moto)
+    # is actually listening on.
+    url = f"https://{BUCKET}.s3.{SERVER_ADDRESS}/path/to/experiment.yama"
     archive = yama.open_s3(url)
 
     assert len(archive) == 3

@@ -175,24 +175,31 @@ name happens to contain a stray `.`:
 ```python
 import marspylib.yama as yama
 
-archive = yama.open_s3(server_address="s3.amazonaws.com",
+archive = yama.open_s3(server_address="storage.example.org",
                         bucket="my-bucket", key="path/to/experiment.yama")
 
 archive["some-uid"].add_tag("reviewed")
 archive.save()   # no args -- saves back to the same S3 location it was opened from
 
-archive.save_s3(server_address="s3.amazonaws.com",
+archive.save_s3(server_address="storage.example.org",
                  bucket="my-bucket", key="path/to/experiment.yama.store")
 ```
 
 If you already work with combined virtual-hosted-style URLs
-(`https://<bucket>.<server_address>/<key>`), those are also supported, as a
-single `location` argument in place of the three separate fields:
+(`https://<bucket>.s3.<server_address>/<key>`), those are also supported, as
+a single `location` argument in place of the three separate fields:
 
 ```python
-archive = yama.open_s3("https://my-bucket.s3.amazonaws.com/path/to/experiment.yama")
-archive.save_s3("https://my-bucket.s3.amazonaws.com/path/to/experiment.yama.store")
+archive = yama.open_s3("https://my-bucket.s3.storage.example.org/path/to/experiment.yama")
+archive.save_s3("https://my-bucket.s3.storage.example.org/path/to/experiment.yama.store")
 ```
+
+The `.s3.` in that combined form is a fixed separator token, not necessarily
+part of the real endpoint host — it's stripped back off when parsed, so both
+forms above point at the same `server_address="storage.example.org"`. (Real
+AWS S3 is a case where the actual endpoint host, `s3.amazonaws.com`,
+separately happens to also start with `s3.` — that's a coincidence of AWS's
+own naming, not something this parsing depends on.)
 
 Both forms work with `.yama.store` too, dispatched the same way `save()`
 dispatches locally — by whether `key` ends in `.yama.store`.
@@ -209,7 +216,7 @@ up here. To use a specific profile or override resolution, pass your own
 import boto3
 
 session = boto3.Session(profile_name="my-profile")
-archive = yama.open_s3(server_address="s3.amazonaws.com", bucket="my-bucket",
+archive = yama.open_s3(server_address="storage.example.org", bucket="my-bucket",
                         key="path/to/experiment.yama", session=session)
 ```
 

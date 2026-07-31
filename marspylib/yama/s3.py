@@ -1,14 +1,24 @@
 """S3 (or any S3-compatible endpoint) location handling for .yama archives.
 
-An archive on S3 is identified by three things: the endpoint host (`server_address`,
-e.g. "s3.example-storage.org" -- an institutional/self-hosted S3-compatible
-endpoint works exactly like AWS itself here, just with a different host),
-the `bucket`, and the `key` (the path to the .yama file or .yama.store
-"directory" within the bucket). `S3Location` holds these three explicitly --
-the recommended way to construct one, since it can't be misread the way a
-combined URL sometimes can -- and also parses/produces the combined
-virtual-hosted-style URL some setups use historically
-(`https://<bucket>.<server_address>/<key>`), so both forms are supported.
+An archive on S3 is identified by three things: the endpoint host
+(`server_address`, e.g. "storage.example.org" -- an institutional/self-hosted
+S3-compatible endpoint works exactly like AWS itself here, just with a
+different host), the `bucket`, and the `key` (the path to the .yama file or
+.yama.store "directory" within the bucket). `S3Location` holds these three
+explicitly -- the recommended way to construct one, since it can't be
+misread the way a combined URL sometimes can -- and also parses/produces the
+combined virtual-hosted-style URL some setups use historically
+(`https://<bucket>.s3.<server_address>/<key>`), so both forms are supported.
+
+The literal ".s3." between bucket and server_address in that combined form
+is a fixed separator token -- it just marks "this is S3" -- and is *not*
+necessarily part of the real endpoint host: e.g. for an archive actually
+served from `minio.example.org:9000`, the combined URL is
+`https://<bucket>.s3.minio.example.org:9000/<key>`, and `server_address` is
+`minio.example.org:9000`, not `s3.minio.example.org:9000`. (AWS's own S3 is
+a case where the real endpoint host, `s3.amazonaws.com`, separately happens
+to also start with "s3." -- that's a coincidence of AWS's own naming, not
+something this parsing relies on.)
 """
 
 from __future__ import annotations
@@ -40,27 +50,31 @@ class S3Location:
 
     @property
     def virtual_hosted_url(self) -> str:
-        """The combined `https://<bucket>.<server_address>/<key>` form."""
-        return f"{self.scheme}://{self.bucket}.{self.server_address}/{self.key}"
+        """The combined `https://<bucket>.s3.<server_address>/<key>` form --
+        ".s3." is a fixed separator token here, not part of server_address
+        (see module docstring)."""
+        return f"{self.scheme}://{self.bucket}.s3.{self.server_address}/{self.key}"
 
     @classmethod
     def from_url(cls, url: str) -> "S3Location":
         """Parses a combined virtual-hosted-style URL
-        (`https://<bucket>.<server_address>/<key>`) -- the bucket is taken
-        as the first label of the hostname, everything after the first "."
-        is the server address, matching how these URLs are actually
-        resolved (the bucket is a DNS subdomain of the endpoint host)."""
+        (`https://<bucket>.s3.<server_address>/<key>`) -- the bucket is the
+        first hostname label, the second must literally be "s3" (a fixed
+        separator, not part of the real endpoint host), and everything after
+        that is the server address."""
         parts = urlsplit(url)
         if not parts.scheme or not parts.netloc:
             raise ValueError(
-                f"not a valid S3 URL (expected https://<bucket>.<server_address>/<key>): {url!r}"
+                f"not a valid S3 URL (expected https://<bucket>.s3.<server_address>/<key>): {url!r}"
             )
-        if "." not in parts.netloc:
+        bucket, sep, server_address = parts.netloc.partition(".")
+        server_address_sep, _, server_address = server_address.partition(".")
+        if not sep or server_address_sep.lower() != "s3" or not server_address:
             raise ValueError(
-                f"S3 URL host {parts.netloc!r} has no bucket subdomain "
-                f"(expected https://<bucket>.<server_address>/<key>): {url!r}"
+                f"S3 URL host {parts.netloc!r} doesn't look like "
+                f"<bucket>.s3.<server_address> (expected "
+                f"https://<bucket>.s3.<server_address>/<key>): {url!r}"
             )
-        bucket, server_address = parts.netloc.split(".", 1)
         return cls(
             server_address=server_address,
             bucket=bucket,
@@ -84,7 +98,7 @@ def resolve_s3_location(location=None, *, server_address: str | None = None,
     if server_address is None or bucket is None or key is None:
         raise ValueError(
             "provide either `location` (an S3Location, or a combined "
-            "https://<bucket>.<server_address>/<key> URL string) or all three of "
+            "https://<bucket>.s3.<server_address>/<key> URL string) or all three of "
             "server_address=, bucket=, key="
         )
     return S3Location(server_address=server_address, bucket=bucket, key=key, secure=secure)
