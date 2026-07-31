@@ -124,7 +124,13 @@ class _LazyMoleculeMap:
     against concurrent same-UID reads) -- every AbstractMoleculeArchive.get()
     call re-reads the file. An LRU cache is added here instead: single-writer
     notebook usage benefits far more from not re-parsing a molecule every
-    time it's touched than it risks staleness."""
+    time it's touched than it risks staleness.
+
+    That LRU cache can still evict a read-only access, which is fine -- it's
+    just re-read from disk next time. `put()` (via `__setitem__`) is
+    different: it's an explicit "this must be saved" pin, kept in `_overrides`
+    where it can never be evicted, checked before the LRU cache on every
+    read. This is also how a brand-new UID gets added to the archive."""
 
     def __init__(self, molecules_dir: Path, archive_type: str, uids: list[str],
                  cache_size: int = DEFAULT_MOLECULE_CACHE_SIZE):
@@ -134,6 +140,7 @@ class _LazyMoleculeMap:
         self._uid_set = set(uids)
         self._cache: "OrderedDict[str, Molecule]" = OrderedDict()
         self._cache_size = cache_size
+        self._overrides: dict[str, Molecule] = {}
 
     def _load(self, uid: str) -> Molecule:
         path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
@@ -141,6 +148,8 @@ class _LazyMoleculeMap:
         return read_molecule(reader, self._archive_type)
 
     def __getitem__(self, uid: str) -> Molecule:
+        if uid in self._overrides:
+            return self._overrides[uid]
         if uid not in self._uid_set:
             raise KeyError(uid)
         if uid in self._cache:
@@ -151,6 +160,13 @@ class _LazyMoleculeMap:
         if len(self._cache) > self._cache_size:
             self._cache.popitem(last=False)
         return molecule
+
+    def __setitem__(self, uid: str, molecule: Molecule) -> None:
+        if uid not in self._uid_set:
+            self._uid_set.add(uid)
+            self._uids.append(uid)
+        self._overrides[uid] = molecule
+        self._cache.pop(uid, None)
 
     def __contains__(self, uid: str) -> bool:
         return uid in self._uid_set
@@ -179,7 +195,10 @@ class _LazyMoleculeMap:
 class _LazyMetadataMap:
     """Matches mars-core: once loaded, a metadata record stays resident for
     the life of the archive (metadata sets are small -- typically one per
-    source image -- unlike molecules, which can number in the thousands)."""
+    source image -- unlike molecules, which can number in the thousands).
+    Since nothing here is ever evicted, `put()` (via `__setitem__`) is just
+    a cache write -- no separate override/pin tier is needed like it is for
+    `_LazyMoleculeMap`."""
 
     def __init__(self, metadata_dir: Path, uids: list[str]):
         self._dir = metadata_dir
@@ -198,6 +217,12 @@ class _LazyMetadataMap:
         if uid not in self._cache:
             self._cache[uid] = self._load(uid)
         return self._cache[uid]
+
+    def __setitem__(self, uid: str, metadata: MarsMetadata) -> None:
+        if uid not in self._uid_set:
+            self._uid_set.add(uid)
+            self._uids.append(uid)
+        self._cache[uid] = metadata
 
     def __contains__(self, uid: str) -> bool:
         return uid in self._uid_set

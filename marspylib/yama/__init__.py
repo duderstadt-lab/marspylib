@@ -26,6 +26,8 @@ from pathlib import Path
 from .errors import SmileFormatError, UnsupportedSchemaError, YamaFormatError
 from .model import (
     Archive,
+    DefaultMolecule,
+    DnaMolecule,
     MarsBdvSource,
     MarsDocument,
     MarsMetadata,
@@ -36,6 +38,7 @@ from .model import (
     PeakShape,
     Properties,
     ReplicationForkShape,
+    SingleMolecule,
     TransverseFlowMolecule,
 )
 
@@ -68,6 +71,7 @@ __all__ = [
     "open", "write",
     "Archive", "Molecule", "MarsMetadata", "MarsRegion", "MarsPosition",
     "MarsBdvSource", "MarsDocument", "Properties",
+    "SingleMolecule", "DnaMolecule", "DefaultMolecule",
     "MartianObject", "PeakShape",
     "TransverseFlowMolecule", "ReplicationForkShape",
     "YamaFormatError", "SmileFormatError", "UnsupportedSchemaError",

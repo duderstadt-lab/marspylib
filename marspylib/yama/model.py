@@ -3,18 +3,18 @@
 Field names and defaults are transcribed from mars-core's Java record
 classes (MarsRegion, MarsPosition, MarsBdvSource, MarsDocument,
 AbstractMarsRecord, AbstractMolecule, AbstractMarsMetadata,
-AbstractMoleculeArchiveProperties). `SingleMolecule`/`DnaMolecule`/
-`DefaultMolecule` are structurally identical in mars-core (ctor-only, no
-extra fields) so one `Molecule` dataclass covers all three -- the archive's
-own `Properties.archive_type` is the only discriminator needed.
+AbstractMoleculeArchiveProperties).
 
-Two archive-type families add real fields beyond plain `Molecule`, so they
-get their own subclasses: `MartianObject` (mars-core's `object` package,
-used by `ObjectArchive`) adds a per-timepoint `PeakShape` polygon, and
-`TransverseFlowMolecule` (the separate `mars-transverseflow` module, used by
-`TransverseFlowArchive`) adds a per-timepoint `ReplicationForkShape`.
-`ARCHIVE_TO_MOLECULE_CLASS` is what `io/molecule.py` uses to pick which
-class to build for a given archive.
+Every archive type gets its own `Molecule` subclass, uniformly -- even
+`SingleMolecule`/`DnaMolecule`/`DefaultMolecule`, which are currently empty
+(mars-core's classes are structurally identical: ctor-only, no extra
+fields). This is deliberate future-proofing: mars-core could add
+type-specific fields to any of these later (as it already has for
+`MartianObject`'s `shapes` and `TransverseFlowMolecule`'s
+`replication_fork_shapes`), and having the class already exist means that's
+an additive change here too, not a restructuring. `ARCHIVE_TO_MOLECULE_CLASS`
+is what `io/molecule.py` uses to pick which class to build for a given
+archive.
 """
 
 from __future__ import annotations
@@ -139,6 +139,21 @@ class Molecule(MarsRecord):
 
 
 @dataclass
+class SingleMolecule(Molecule):
+    """Used by SingleMoleculeArchive. Currently identical to Molecule."""
+
+
+@dataclass
+class DnaMolecule(Molecule):
+    """Used by DnaMoleculeArchive. Currently identical to Molecule."""
+
+
+@dataclass
+class DefaultMolecule(Molecule):
+    """Used by DefaultMoleculeArchive. Currently identical to Molecule."""
+
+
+@dataclass
 class PeakShape:
     """A closed 2D polygon outline (image/PeakShape.java) -- x/y coordinate
     arrays, always the same length ("vertices" on disk is just that length,
@@ -184,9 +199,9 @@ class TransverseFlowMolecule(Molecule):
 
 # Which dataclass to instantiate for a given archive's molecule records.
 ARCHIVE_TO_MOLECULE_CLASS = {
-    "de.mpg.biochem.mars.molecule.SingleMoleculeArchive": Molecule,
-    "de.mpg.biochem.mars.molecule.DnaMoleculeArchive": Molecule,
-    "de.mpg.biochem.mars.molecule.DefaultMoleculeArchive": Molecule,
+    "de.mpg.biochem.mars.molecule.SingleMoleculeArchive": SingleMolecule,
+    "de.mpg.biochem.mars.molecule.DnaMoleculeArchive": DnaMolecule,
+    "de.mpg.biochem.mars.molecule.DefaultMoleculeArchive": DefaultMolecule,
     "de.mpg.biochem.mars.object.ObjectArchive": MartianObject,
     "de.mpg.biochem.mars.transverseflow.TransverseFlowArchive": TransverseFlowMolecule,
 }
@@ -266,6 +281,65 @@ class Archive:
         meta = self._metadata.get(metadata_uid)
         return meta is not None and meta.has_tag(tag)
 
+    def put(self, molecule: Molecule) -> None:
+        """Add a new molecule (keyed by molecule.uid), or replace an
+        existing one. For a plain in-memory archive this is just a dict
+        write and mutating a molecule you already hold a reference to
+        (e.g. archive["x"].add_tag(...)) already persists without calling
+        put() at all. For a .yama.store-backed archive, put() matters more:
+        molecules are lazily loaded and LRU-cached, so a mutated molecule
+        that falls out of cache before save() would otherwise be silently
+        re-read from disk, losing the edit -- put() pins it so it's
+        guaranteed to survive to the next save(), and is also the only way
+        to add a UID that wasn't already in the archive."""
+        self._molecules[molecule.uid] = molecule
+
+    def put_metadata(self, metadata: MarsMetadata) -> None:
+        """Add a new metadata record, or replace an existing one. See put()
+        -- metadata is already fully cached once loaded (never evicted), so
+        this mainly matters for adding a UID that wasn't already present."""
+        self._metadata[metadata.uid] = metadata
+
+    def _sync_properties_before_save(self) -> None:
+        """Recomputes properties' aggregate fields from the archive's
+        current contents, mirroring mars-core's rebuildIndexes()/
+        AbstractMoleculeArchiveProperties.addMoleculeProperties (a fresh
+        scan of every present molecule, not an incremental merge) --
+        without this, put()-ing a molecule with a new tag/parameter/channel
+        would leave the saved archive's properties stale. Note
+        addMetadataProperties is a no-op in mars-core itself ("currently
+        nothing is indexed") so metadata contributes nothing here either,
+        and channel -1 (mars-core's "unset" sentinel) is excluded from
+        channel_set, matching addMoleculeProperties exactly."""
+        tag_set: set[str] = set()
+        channel_set: set[int] = set()
+        parameter_set: set[str] = set()
+        region_set: set[str] = set()
+        position_set: set[str] = set()
+        table_column_set: set[str] = set()
+        segment_table_names: set[tuple[str, str]] = set()
+
+        for molecule in self:
+            tag_set.update(molecule.tags)
+            parameter_set.update(molecule.parameters.keys())
+            region_set.update(molecule.regions.keys())
+            position_set.update(molecule.positions.keys())
+            if molecule.channel > -1:
+                channel_set.add(molecule.channel)
+            table_column_set.update(str(c) for c in molecule.table.columns)
+            for x_col, y_col, _region in molecule.segment_tables.keys():
+                segment_table_names.add((x_col, y_col))
+
+        self.properties.number_of_molecules = len(self)
+        self.properties.number_of_metadata = len(list(self.metadata))
+        self.properties.tag_set = tag_set
+        self.properties.channel_set = channel_set
+        self.properties.parameter_set = parameter_set
+        self.properties.region_set = region_set
+        self.properties.position_set = position_set
+        self.properties.table_column_set = table_column_set
+        self.properties.segment_table_names = segment_table_names
+
     def save(self, path: str | Path | None = None) -> None:
         """Write this archive out. If `path` is omitted, reuses the path it
         was opened from. Whether the result is a single-file .yama or a
@@ -279,6 +353,8 @@ class Archive:
         target = Path(path) if path is not None else self._source_path
         if target is None:
             raise ValueError("no path given and archive was not opened from a file")
+
+        self._sync_properties_before_save()
 
         if looks_like_virtual_store_path(target):
             write_virtual_store(target, self)

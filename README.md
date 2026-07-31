@@ -69,13 +69,34 @@ reading from it — a molecule you haven't touched yet is only read from its
 file the moment you access it, so don't delete, move, or let a temporary
 directory holding one go out of scope while you're still using the archive.
 
+Molecules in a `.yama.store` are loaded lazily and LRU-cached (default 128
+at a time) — mutating one you already hold a reference to (like
+`molecule.add_tag(...)` above) is safe as long as it's still cached when you
+call `save()`. If you're touching more distinct molecules than that between
+editing one and saving, or want to be certain, use `archive.put(molecule)`
+to pin it so it's guaranteed to be written regardless of cache pressure:
+
+```python
+molecule = archive["some-uid"]
+molecule.add_tag("reviewed")
+archive.put(molecule)     # pins it -- guaranteed to persist even if evicted
+# ... touch hundreds of other molecules ...
+archive.save()
+```
+
+`put()`/`put_metadata()` are also how you add a brand-new record (a UID
+that wasn't already in the archive) — see the mapping table below.
+
 ### Supported archive types
 
 Every `SingleMoleculeArchive`, `DnaMoleculeArchive`, and
-`DefaultMoleculeArchive` opened from Fiji uses the exact same `Molecule`
-Python class — in mars-core these three only differ in name, not in the
-fields they store, so there's nothing archive-type-specific to know about
-when working with them from Python.
+`DefaultMoleculeArchive` opened from Fiji gets its own `Molecule` subclass
+(`SingleMolecule`, `DnaMolecule`, `DefaultMolecule`) — currently identical
+to plain `Molecule`, since in mars-core these three only differ in name, not
+in the fields they store today. Every archive type gets a dedicated Python
+class uniformly, even when (as here) there's nothing archive-type-specific
+about it yet, so a future mars-core field addition to any one of them only
+means filling in that one class here, not restructuring anything.
 
 Two other archive types carry one extra field per record, so they get their
 own `Molecule` subclasses:
@@ -133,7 +154,8 @@ attribute you can read or assign directly.
 | `archive.save()` | `archive.save()` |
 | `archive.saveAs(file)` | `archive.save(path)` |
 | `archive.saveAsVirtualStore(dir)` | `archive.save(path)` where `path` ends in `.yama.store` |
-| `archive.put(molecule)` / `archive.putMetadata(m)` | not supported yet — see note below |
+| `archive.put(molecule)` | `archive.put(molecule)` |
+| `archive.putMetadata(m)` | `archive.put_metadata(m)` |
 
 **`Molecule` / `MarsRecord`** (`de.mpg.biochem.mars.molecule.Molecule`, `MarsRecord`)
 
@@ -189,7 +211,12 @@ attribute you can read or assign directly.
 | `properties.getSegmentsTableNames()` | `properties.segment_table_names` |
 | document access | `properties.documents[name]` |
 
-**Not yet supported:** adding or removing molecules/metadata records
-(`archive.put(...)`/`putMetadata(...)`) — this port can open, modify, and
-save existing records, but the set of UIDs in an archive is currently
-fixed at what was loaded.
+**Not yet supported:** removing molecules/metadata records from an archive
+(there's a `put`, but no `remove`/`delete` yet).
+
+Note `archive.save()` recomputes `properties.tag_set`/`channel_set`/
+`parameter_set`/`region_set`/`position_set`/`table_column_set`/
+`segment_table_names`/`number_of_molecules`/`number_of_metadata` from the
+archive's actual current contents before writing (mirroring mars-core's own
+`rebuildIndexes()`), so these always reflect reality after a `put()` even
+though nothing updates them incrementally as you go.
