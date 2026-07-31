@@ -1,16 +1,26 @@
 """Molecule-specific fields, transcribed from AbstractMolecule.createIOMaps
 (molecule/AbstractMolecule.java:136-234): table, metadataUID, image, channel,
 segmentTables, appended after the shared base record fields.
+
+Two archive types add one further field beyond this common set -- see
+`_EXTRA_FIELDS_BY_ARCHIVE_TYPE` below, and object_archive.py/transverseflow.py
+for what those fields actually are.
 """
 
 from __future__ import annotations
 
-from ..model import ARCHIVE_TO_MOLECULE_TYPE, Molecule
+from ..model import ARCHIVE_TO_MOLECULE_CLASS, ARCHIVE_TO_MOLECULE_TYPE, Molecule
 from ..smile.reader import SmileReader, SmileToken
 from ..smile.writer import SmileWriter
+from . import object_archive, transverseflow
 from .fields import FieldSpec, read_record, write_record
 from .record import base_record_fields
 from .table import read_table, write_table
+
+_EXTRA_FIELDS_BY_ARCHIVE_TYPE: dict[str, list[FieldSpec]] = {
+    object_archive.OBJECT_ARCHIVE_TYPE: object_archive.EXTRA_FIELDS,
+    transverseflow.TRANSVERSE_FLOW_ARCHIVE_TYPE: transverseflow.EXTRA_FIELDS,
+}
 
 
 def _write_table(writer: SmileWriter, obj: Molecule) -> None:
@@ -95,13 +105,14 @@ def _read_segment_tables(reader: SmileReader, obj: Molecule) -> None:
 
 def molecule_fields(archive_type: str) -> list[FieldSpec]:
     type_fqcn = ARCHIVE_TO_MOLECULE_TYPE[archive_type]
-    return base_record_fields(type_fqcn) + [
+    fields = base_record_fields(type_fqcn) + [
         FieldSpec("table", _write_table, _read_table),
         FieldSpec("metadataUID", _write_metadata_uid, _read_metadata_uid),
         FieldSpec("image", _write_image, _read_image),
         FieldSpec("channel", _write_channel, _read_channel),
         FieldSpec("segmentTables", _write_segment_tables, _read_segment_tables),
     ]
+    return fields + _EXTRA_FIELDS_BY_ARCHIVE_TYPE.get(archive_type, [])
 
 
 def write_molecule(writer: SmileWriter, molecule: Molecule, archive_type: str) -> None:
@@ -109,6 +120,7 @@ def write_molecule(writer: SmileWriter, molecule: Molecule, archive_type: str) -
 
 
 def read_molecule(reader: SmileReader, archive_type: str) -> Molecule:
-    molecule = Molecule()
+    molecule_class = ARCHIVE_TO_MOLECULE_CLASS[archive_type]
+    molecule = molecule_class()
     read_record(reader, molecule, molecule_fields(archive_type))
     return molecule

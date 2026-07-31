@@ -7,6 +7,14 @@ AbstractMoleculeArchiveProperties). `SingleMolecule`/`DnaMolecule`/
 `DefaultMolecule` are structurally identical in mars-core (ctor-only, no
 extra fields) so one `Molecule` dataclass covers all three -- the archive's
 own `Properties.archive_type` is the only discriminator needed.
+
+Two archive-type families add real fields beyond plain `Molecule`, so they
+get their own subclasses: `MartianObject` (mars-core's `object` package,
+used by `ObjectArchive`) adds a per-timepoint `PeakShape` polygon, and
+`TransverseFlowMolecule` (the separate `mars-transverseflow` module, used by
+`TransverseFlowArchive`) adds a per-timepoint `ReplicationForkShape`.
+`ARCHIVE_TO_MOLECULE_CLASS` is what `io/molecule.py` uses to pick which
+class to build for a given archive.
 """
 
 from __future__ import annotations
@@ -24,16 +32,19 @@ ARCHIVE_TYPES = {
     "SingleMoleculeArchive": "de.mpg.biochem.mars.molecule.SingleMoleculeArchive",
     "DnaMoleculeArchive": "de.mpg.biochem.mars.molecule.DnaMoleculeArchive",
     "DefaultMoleculeArchive": "de.mpg.biochem.mars.molecule.DefaultMoleculeArchive",
+    "ObjectArchive": "de.mpg.biochem.mars.object.ObjectArchive",
+    "TransverseFlowArchive": "de.mpg.biochem.mars.transverseflow.TransverseFlowArchive",
 }
 
 # Each archive type fixes its own concrete Molecule subtype (M in mars-core's
-# generic MoleculeArchive<M, I, P, X>) -- these subtypes are structurally
-# identical (ctor-only, no extra fields), so this port uses one Molecule
-# dataclass and only needs this mapping to write the write-only "type" field.
+# generic MoleculeArchive<M, I, P, X>) -- used to write the write-only "type"
+# field on each molecule record.
 ARCHIVE_TO_MOLECULE_TYPE = {
     "de.mpg.biochem.mars.molecule.SingleMoleculeArchive": "de.mpg.biochem.mars.molecule.SingleMolecule",
     "de.mpg.biochem.mars.molecule.DnaMoleculeArchive": "de.mpg.biochem.mars.molecule.DnaMolecule",
     "de.mpg.biochem.mars.molecule.DefaultMoleculeArchive": "de.mpg.biochem.mars.molecule.DefaultMolecule",
+    "de.mpg.biochem.mars.object.ObjectArchive": "de.mpg.biochem.mars.object.MartianObject",
+    "de.mpg.biochem.mars.transverseflow.TransverseFlowArchive": "de.mpg.biochem.mars.transverseflow.TransverseFlowMolecule",
 }
 
 # MarsOMEMetadata is the only concrete MarsMetadata used by every archive type.
@@ -125,6 +136,60 @@ class Molecule(MarsRecord):
     channel: int = -1
     # keyed by (x_column, y_column, region) -- region is "" when none was set
     segment_tables: dict[tuple[str, str, str], pd.DataFrame] = field(default_factory=dict)
+
+
+@dataclass
+class PeakShape:
+    """A closed 2D polygon outline (image/PeakShape.java) -- x/y coordinate
+    arrays, always the same length ("vertices" on disk is just that length,
+    redundant with len(x)/len(y) and not kept separately here)."""
+    x: list[float] = field(default_factory=list)
+    y: list[float] = field(default_factory=list)
+
+
+@dataclass
+class MartianObject(Molecule):
+    """Used by ObjectArchive (mars-core's `object` package). Adds one field
+    beyond plain Molecule: a PeakShape polygon per timepoint."""
+    shapes: dict[int, PeakShape] = field(default_factory=dict)
+
+
+@dataclass
+class ReplicationForkShape:
+    """A DNA replication fork's geometry (mars-transverseflow's
+    ReplicationForkShape.java): three polygon/polyline segments -- the
+    not-yet-replicated parental duplex, and the leading/lagging daughter
+    strands -- each with an optional per-channel intensity profile sampled
+    along the shape (channel name -> {coordinate: intensity}). Note the real
+    Java quirk, preserved here rather than "fixed": parental/leading
+    intensity samples are keyed by "x", lagging by "y" -- see io/transverseflow.py."""
+    parental_x: list[float] = field(default_factory=list)
+    parental_y: list[float] = field(default_factory=list)
+    parental_intensity: dict[str, dict[int, float]] = field(default_factory=dict)
+    leading_x: list[float] = field(default_factory=list)
+    leading_y: list[float] = field(default_factory=list)
+    leading_intensity: dict[str, dict[int, float]] = field(default_factory=dict)
+    lagging_x: list[float] = field(default_factory=list)
+    lagging_y: list[float] = field(default_factory=list)
+    lagging_intensity: dict[str, dict[int, float]] = field(default_factory=dict)
+
+
+@dataclass
+class TransverseFlowMolecule(Molecule):
+    """Used by TransverseFlowArchive (the separate mars-transverseflow
+    module). Adds one field beyond plain Molecule: a ReplicationForkShape
+    per timepoint."""
+    replication_fork_shapes: dict[int, ReplicationForkShape] = field(default_factory=dict)
+
+
+# Which dataclass to instantiate for a given archive's molecule records.
+ARCHIVE_TO_MOLECULE_CLASS = {
+    "de.mpg.biochem.mars.molecule.SingleMoleculeArchive": Molecule,
+    "de.mpg.biochem.mars.molecule.DnaMoleculeArchive": Molecule,
+    "de.mpg.biochem.mars.molecule.DefaultMoleculeArchive": Molecule,
+    "de.mpg.biochem.mars.object.ObjectArchive": MartianObject,
+    "de.mpg.biochem.mars.transverseflow.TransverseFlowArchive": TransverseFlowMolecule,
+}
 
 
 @dataclass

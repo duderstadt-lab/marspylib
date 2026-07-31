@@ -31,8 +31,12 @@ from .model import (
     MarsMetadata,
     MarsPosition,
     MarsRegion,
+    MartianObject,
     Molecule,
+    PeakShape,
     Properties,
+    ReplicationForkShape,
+    TransverseFlowMolecule,
 )
 
 
@@ -64,5 +68,7 @@ __all__ = [
     "open", "write",
     "Archive", "Molecule", "MarsMetadata", "MarsRegion", "MarsPosition",
     "MarsBdvSource", "MarsDocument", "Properties",
+    "MartianObject", "PeakShape",
+    "TransverseFlowMolecule", "ReplicationForkShape",
     "YamaFormatError", "SmileFormatError", "UnsupportedSchemaError",
 ]

@@ -71,3 +71,36 @@ it, `archive.save(...)`, then run `java -cp "$CP:out" gen.ReadPython
 is the acceptance bar from the original design doc: mars-core reading what
 Python writes and getting semantically identical records, not byte-identical
 files.
+
+## Extra archive types (`GenObjectArchive.java`, `GenTransverseFlowArchive.java`)
+
+`ObjectArchive`/`MartianObject` (mars-core's `object` package) and
+`TransverseFlowArchive`/`TransverseFlowMolecule` (the separate
+`mars-transverseflow` module) each add one field beyond plain `Molecule` --
+a `PeakShape` polygon and a `ReplicationForkShape`, respectively, both keyed
+per timepoint. `GenObjectArchive.java` only needs the same mars-core
+classpath as everything else above:
+
+```bash
+javac -cp "$CP" -d out GenObjectArchive.java
+java -cp "$CP:out" gen.GenObjectArchive   # -> object_archive.yama (copy into ../yama/)
+```
+
+`mars-transverseflow` is a separate Maven module (`/path/to/mars-transverseflow`,
+depends on a pinned mars-core version) and needs its own classpath:
+
+```bash
+cd /path/to/mars-transverseflow && mvn -q -o dependency:build-classpath -Dmdep.outputFile=/tmp/mars-transverseflow-cp.txt
+CP_TF="$(cat /tmp/mars-transverseflow-cp.txt):/path/to/mars-transverseflow/target/classes"
+
+javac -cp "$CP_TF" -d out GenTransverseFlowArchive.java
+java -cp "$CP_TF:out" gen.GenTransverseFlowArchive   # -> transverseflow_archive.yama (copy into ../yama/)
+```
+
+Both generators include one record with an empty shapes map, to exercise
+the "field omitted entirely when empty" write guard those two field types
+share with several others in this format. Note
+`ReplicationForkShape.laggingIntensity` entries are keyed `"y"` while
+`parentalIntensity`/`leadingIntensity` use `"x"` -- a real quirk in the Java
+source (`ReplicationForkShape.java`), not a typo, and the Python reader/
+writer (`marspylib/yama/io/transverseflow.py`) replicates it exactly.
