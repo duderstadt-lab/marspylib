@@ -1,12 +1,17 @@
 """Support for .yama.store virtual archives: lazy per-record loading from a
 directory tree instead of one big in-memory document, and writing archives
-back out in that same layout.
+back out in that same layout. Works against anything satisfying the `Store`
+protocol (backend.py) -- a local filesystem directory or an S3 bucket/prefix
+-- since neither the Smile parsing nor the index/record logic here cares
+where the bytes actually come from.
 
-Transcribed from mars-core's MoleculeArchiveFSSource (layout/UID scanning),
-AbstractMoleculeArchiveIndex (indexes.<ext> shape and addMolecule/addMetadata
-population), and AbstractMoleculeArchive.loadVirtualStore/rebuildIndexes/
-saveAsVirtualStore (read/write order and missing-index fallback). Only the
-Smile ('.sml') encoding is supported, matching this port's single-file scope.
+Transcribed from mars-core's MoleculeArchiveFSSource (layout/UID scanning;
+MoleculeArchiveAmazonS3Source uses the identical layout, just S3 keys
+instead of paths), AbstractMoleculeArchiveIndex (indexes.<ext> shape and
+addMolecule/addMetadata population), and AbstractMoleculeArchive.
+loadVirtualStore/rebuildIndexes/saveAsVirtualStore (read/write order and
+missing-index fallback). Only the Smile ('.sml') encoding is supported,
+matching this port's single-file scope.
 
 Each file in the store (MoleculeArchiveProperties.sml, indexes.sml, and
 every per-record Molecules/<uid>.sml / Metadata/<uid>.sml) is its own
@@ -21,8 +26,10 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..backend import LocalFilesystemStore, S3Store, Store
 from ..errors import YamaFormatError
 from ..model import ARCHIVE_TO_MOLECULE_TYPE, Archive, MarsMetadata, Molecule
+from ..s3 import S3Location
 from ..smile.reader import SmileReader, SmileToken
 from ..smile.writer import SmileWriter
 from .metadata import read_metadata, write_metadata
@@ -47,15 +54,15 @@ def looks_like_virtual_store_path(path: Path) -> bool:
     return path.name.endswith(".yama.store")
 
 
-def _detect_extension(store_dir: Path) -> str:
-    if (store_dir / f"{PROPERTIES_FILE_NAME}.sml").exists():
+def _detect_extension(store: Store) -> str:
+    if store.exists(f"{PROPERTIES_FILE_NAME}.sml"):
         return ".sml"
-    if (store_dir / f"{PROPERTIES_FILE_NAME}.json").exists():
+    if store.exists(f"{PROPERTIES_FILE_NAME}.json"):
         raise YamaFormatError(
-            f"{store_dir} uses the plain-JSON virtual store encoding, which is not "
-            "supported (only Smile-encoded '.sml' virtual stores are supported)"
+            "this .yama.store archive uses the plain-JSON virtual store encoding, which is "
+            "not supported (only Smile-encoded '.sml' virtual stores are supported)"
         )
-    raise YamaFormatError(f"no {PROPERTIES_FILE_NAME}.sml found in {store_dir}")
+    raise YamaFormatError(f"no {PROPERTIES_FILE_NAME}.sml found")
 
 
 def _read_document_root(data: bytes) -> SmileReader:
@@ -66,10 +73,12 @@ def _read_document_root(data: bytes) -> SmileReader:
     return reader
 
 
-def _scan_uids(directory: Path, ext: str) -> list[str]:
-    if not directory.is_dir():
-        return []
-    return sorted(p.name[:-len(ext)] for p in directory.iterdir() if p.name.endswith(ext))
+def _scan_uids(store: Store, prefix: str, ext: str) -> list[str]:
+    return sorted(
+        key[len(prefix):-len(ext)]
+        for key in store.list_keys(prefix)
+        if key.endswith(ext)
+    )
 
 
 @dataclass
@@ -180,15 +189,17 @@ class _LazyMoleculeMap:
     time it's touched than it risks staleness.
 
     That LRU cache can still evict a read-only access, which is fine -- it's
-    just re-read from disk next time. `put()` (via `__setitem__`) is
-    different: it's an explicit "this must be saved" pin, kept in `_overrides`
-    where it can never be evicted, checked before the LRU cache on every
-    read. This is also how a brand-new UID gets added to the archive."""
+    just re-read next time (from disk, or over the network for S3). `put()`
+    (via `__setitem__`) is different: it's an explicit "this must be saved"
+    pin, kept in `_overrides` where it can never be evicted, checked before
+    the LRU cache on every read. This is also how a brand-new UID gets added
+    to the archive."""
 
-    def __init__(self, molecules_dir: Path, archive_type: str, uids: list[str],
+    def __init__(self, store: Store, archive_type: str, uids: list[str],
                  cache_size: int = DEFAULT_MOLECULE_CACHE_SIZE,
                  index: dict[str, MoleculeIndexEntry] | None = None):
-        self._dir = molecules_dir
+        self._store = store
+        self._key_prefix = f"{MOLECULES_SUBDIRECTORY_NAME}/"
         self._archive_type = archive_type
         self._uids = uids
         self._uid_set = set(uids)
@@ -203,9 +214,11 @@ class _LazyMoleculeMap:
         # fallback), in which case every lookup just falls back to a load.
         self._index: dict[str, MoleculeIndexEntry] = index or {}
 
+    def _key(self, uid: str) -> str:
+        return f"{self._key_prefix}{uid}{STORE_FILE_EXTENSION}"
+
     def _load(self, uid: str) -> Molecule:
-        path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
-        reader = _read_document_root(path.read_bytes())
+        reader = _read_document_root(self._store.read_bytes(self._key(uid)))
         return read_molecule(reader, self._archive_type)
 
     def __getitem__(self, uid: str) -> Molecule:
@@ -236,7 +249,8 @@ class _LazyMoleculeMap:
     def __delitem__(self, uid: str) -> None:
         """Matches mars-core's remove(): deletes the underlying .sml file
         immediately (not deferred to the next save()) -- see
-        MoleculeArchiveFSSource.removeMolecule()."""
+        MoleculeArchiveFSSource.removeMolecule()/
+        MoleculeArchiveAmazonS3Source's equivalent."""
         if uid not in self._uid_set:
             raise KeyError(uid)
         self._uid_set.discard(uid)
@@ -244,9 +258,7 @@ class _LazyMoleculeMap:
         self._cache.pop(uid, None)
         self._overrides.pop(uid, None)
         self._index.pop(uid, None)
-        path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
-        if path.exists():
-            path.unlink()
+        self._store.delete(self._key(uid))
 
     def __contains__(self, uid: str) -> bool:
         return uid in self._uid_set
@@ -336,17 +348,20 @@ class _LazyMetadataMap:
     a cache write -- no separate override/pin tier is needed like it is for
     `_LazyMoleculeMap`."""
 
-    def __init__(self, metadata_dir: Path, uids: list[str],
+    def __init__(self, store: Store, uids: list[str],
                  index: dict[str, list[str]] | None = None):
-        self._dir = metadata_dir
+        self._store = store
+        self._key_prefix = f"{METADATA_SUBDIRECTORY_NAME}/"
         self._uids = uids
         self._uid_set = set(uids)
         self._cache: dict[str, MarsMetadata] = {}
         self._index: dict[str, list[str]] = index or {}  # uid -> tags, from indexes.<ext>
 
+    def _key(self, uid: str) -> str:
+        return f"{self._key_prefix}{uid}{STORE_FILE_EXTENSION}"
+
     def _load(self, uid: str) -> MarsMetadata:
-        path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
-        reader = _read_document_root(path.read_bytes())
+        reader = _read_document_root(self._store.read_bytes(self._key(uid)))
         return read_metadata(reader)
 
     def __getitem__(self, uid: str) -> MarsMetadata:
@@ -372,9 +387,7 @@ class _LazyMetadataMap:
         self._uids.remove(uid)
         self._cache.pop(uid, None)
         self._index.pop(uid, None)
-        path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
-        if path.exists():
-            path.unlink()
+        self._store.delete(self._key(uid))
 
     def __contains__(self, uid: str) -> bool:
         return uid in self._uid_set
@@ -413,22 +426,24 @@ class _LazyMetadataMap:
         return list(self[uid].tags)
 
 
-def open_virtual_store(store_dir: Path, molecule_cache_size: int = DEFAULT_MOLECULE_CACHE_SIZE) -> Archive:
-    ext = _detect_extension(store_dir)
+def _open_virtual_store(store: Store, source_path,
+                         molecule_cache_size: int = DEFAULT_MOLECULE_CACHE_SIZE) -> Archive:
+    """Generic open, working against any Store -- see open_virtual_store()
+    (local filesystem) and open_virtual_store_s3() for the concrete entry
+    points. `source_path` is whatever Archive.save()/save_s3() should
+    remember as "where this came from" (a Path or an S3Location)."""
+    ext = _detect_extension(store)
 
-    properties_path = store_dir / f"{PROPERTIES_FILE_NAME}{ext}"
-    properties = read_properties(_read_document_root(properties_path.read_bytes()))
+    properties = read_properties(_read_document_root(store.read_bytes(f"{PROPERTIES_FILE_NAME}{ext}")))
     if properties.archive_type not in ARCHIVE_TO_MOLECULE_TYPE:
         raise YamaFormatError(
             f"unsupported archiveType {properties.archive_type!r}; "
             f"expected one of {sorted(ARCHIVE_TO_MOLECULE_TYPE)}"
         )
 
-    index_path = store_dir / f"{INDEXES_FILE_NAME}{ext}"
-    molecules_dir = store_dir / MOLECULES_SUBDIRECTORY_NAME
-    metadata_dir = store_dir / METADATA_SUBDIRECTORY_NAME
-    if index_path.exists():
-        metadata_index, molecule_index = _read_index(_read_document_root(index_path.read_bytes()))
+    index_key = f"{INDEXES_FILE_NAME}{ext}"
+    if store.exists(index_key):
+        metadata_index, molecule_index = _read_index(_read_document_root(store.read_bytes(index_key)))
         molecule_uids = list(molecule_index.keys())
         metadata_uids = list(metadata_index.keys())
     else:
@@ -436,27 +451,42 @@ def open_virtual_store(store_dir: Path, molecule_cache_size: int = DEFAULT_MOLEC
         # this just scans filenames instead and lets records load lazily --
         # so tags_for()/channel_for()/etc. have no index to answer from and
         # fall back to a full load until the next save() rewrites indexes.<ext>.
-        molecule_uids = _scan_uids(molecules_dir, ext)
-        metadata_uids = _scan_uids(metadata_dir, ext)
+        molecule_uids = _scan_uids(store, f"{MOLECULES_SUBDIRECTORY_NAME}/", ext)
+        metadata_uids = _scan_uids(store, f"{METADATA_SUBDIRECTORY_NAME}/", ext)
         molecule_index = {}
         metadata_index = {}
 
-    molecules = _LazyMoleculeMap(molecules_dir, properties.archive_type, molecule_uids,
+    molecules = _LazyMoleculeMap(store, properties.archive_type, molecule_uids,
                                   cache_size=molecule_cache_size, index=molecule_index)
-    metadata = _LazyMetadataMap(metadata_dir, metadata_uids, index=metadata_index)
+    metadata = _LazyMetadataMap(store, metadata_uids, index=metadata_index)
 
-    return Archive(properties, metadata, molecules, source_path=store_dir)
-
-
-def _write_record_document(path: Path, write_fn) -> None:
-    with open(path, "wb") as stream:
-        writer = SmileWriter(stream)
-        writer.write_header()
-        write_fn(writer)
-        writer.close()
+    return Archive(properties, metadata, molecules, source_path=source_path)
 
 
-def _write_index(path: Path, archive: Archive) -> None:
+def open_virtual_store(store_dir: Path, molecule_cache_size: int = DEFAULT_MOLECULE_CACHE_SIZE) -> Archive:
+    return _open_virtual_store(LocalFilesystemStore(store_dir), store_dir,
+                                molecule_cache_size=molecule_cache_size)
+
+
+def open_virtual_store_s3(location: S3Location, session=None,
+                           molecule_cache_size: int = DEFAULT_MOLECULE_CACHE_SIZE,
+                           **client_kwargs) -> Archive:
+    store = S3Store(location, session=session, **client_kwargs)
+    return _open_virtual_store(store, location, molecule_cache_size=molecule_cache_size)
+
+
+def _write_record_document(store: Store, key: str, write_fn) -> None:
+    import io as _io
+
+    buf = _io.BytesIO()
+    writer = SmileWriter(buf)
+    writer.write_header()
+    write_fn(writer)
+    writer.close()
+    store.write_bytes(key, buf.getvalue())
+
+
+def _write_index(store: Store, ext: str, archive: Archive) -> None:
     """Mirrors AbstractMoleculeArchiveIndex.createIOMaps's write order
     ("metadata" array, then "molecules" array) and addMolecule/addMetadata's
     unconditional population -- every field is always written, matching what
@@ -501,11 +531,13 @@ def _write_index(path: Path, archive: Archive) -> None:
 
         writer.write_end_object()
 
-    _write_record_document(path, write)
+    _write_record_document(store, f"{INDEXES_FILE_NAME}{ext}", write)
 
 
-def write_virtual_store(store_dir: Path, archive: Archive) -> None:
-    """Writes (or overwrites in place) a .yama.store directory for `archive`.
+def _write_virtual_store(store: Store, archive: Archive) -> None:
+    """Generic write, working against any Store -- see write_virtual_store()
+    (local filesystem) and write_virtual_store_s3() for the concrete entry
+    points.
 
     Mirrors mars-core's saveAsVirtualStore order: every metadata and molecule
     record file first, then indexes.<ext>, then MoleculeArchiveProperties.<ext>
@@ -514,20 +546,24 @@ def write_virtual_store(store_dir: Path, archive: Archive) -> None:
     complete, self-consistent snapshot -- not just whatever happened to be
     cached.
     """
-    metadata_dir = store_dir / METADATA_SUBDIRECTORY_NAME
-    molecules_dir = store_dir / MOLECULES_SUBDIRECTORY_NAME
-    metadata_dir.mkdir(parents=True, exist_ok=True)
-    molecules_dir.mkdir(parents=True, exist_ok=True)
-
     for meta in archive.metadata:
-        _write_record_document(metadata_dir / f"{meta.uid}{STORE_FILE_EXTENSION}",
+        _write_record_document(store, f"{METADATA_SUBDIRECTORY_NAME}/{meta.uid}{STORE_FILE_EXTENSION}",
                                 lambda w, m=meta: write_metadata(w, m))
 
     for molecule in archive:
-        _write_record_document(molecules_dir / f"{molecule.uid}{STORE_FILE_EXTENSION}",
+        _write_record_document(store, f"{MOLECULES_SUBDIRECTORY_NAME}/{molecule.uid}{STORE_FILE_EXTENSION}",
                                 lambda w, mol=molecule: write_molecule(w, mol, archive.archive_type))
 
-    _write_index(store_dir / f"{INDEXES_FILE_NAME}{STORE_FILE_EXTENSION}", archive)
+    _write_index(store, STORE_FILE_EXTENSION, archive)
 
-    _write_record_document(store_dir / f"{PROPERTIES_FILE_NAME}{STORE_FILE_EXTENSION}",
+    _write_record_document(store, f"{PROPERTIES_FILE_NAME}{STORE_FILE_EXTENSION}",
                             lambda w: write_properties(w, archive.properties))
+
+
+def write_virtual_store(store_dir: Path, archive: Archive) -> None:
+    _write_virtual_store(LocalFilesystemStore(store_dir), archive)
+
+
+def write_virtual_store_s3(location: S3Location, archive: Archive, session=None, **client_kwargs) -> None:
+    store = S3Store(location, session=session, **client_kwargs)
+    _write_virtual_store(store, archive)

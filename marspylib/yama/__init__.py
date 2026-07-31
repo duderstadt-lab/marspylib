@@ -42,6 +42,7 @@ from .model import (
     SingleMolecule,
     TransverseFlowMolecule,
 )
+from .s3 import S3Location
 from .uid import new_metadata_uid, new_molecule_uid
 
 
@@ -69,13 +70,57 @@ def write(archive: Archive, path: str | Path) -> None:
     archive.save(path)
 
 
+def open_s3(location: S3Location | str | None = None, *, server_address: str | None = None,
+            bucket: str | None = None, key: str | None = None, secure: bool = True,
+            session=None, molecule_cache_size: int | None = None, **client_kwargs) -> Archive:
+    """Read a .yama (or lazily open a .yama.store) archive from S3 or any
+    S3-compatible endpoint. The location can be given either as the three
+    fields separately (recommended -- unambiguous):
+
+        archive = yama.open_s3(server_address="s3.example-storage.org",
+                                bucket="my-bucket", key="path/to/experiment.yama")
+
+    or as a single combined virtual-hosted-style URL, for compatibility with
+    setups that already use that convention:
+
+        archive = yama.open_s3("https://my-bucket.s3.example-storage.org/path/to/experiment.yama")
+
+    Credentials are resolved the standard boto3 way (environment variables,
+    ~/.aws/credentials, SSO cache, IAM role) -- if they're already configured
+    locally, nothing further needs to be passed here. Pass `session=` (a
+    boto3.Session) to override that resolution explicitly."""
+    from .io.store import open_virtual_store_s3
+    from .s3 import resolve_s3_location
+
+    resolved = resolve_s3_location(location, server_address=server_address, bucket=bucket,
+                                    key=key, secure=secure)
+
+    if resolved.key.endswith(".yama.store"):
+        kwargs = {}
+        if molecule_cache_size is not None:
+            kwargs["molecule_cache_size"] = molecule_cache_size
+        return open_virtual_store_s3(resolved, session=session, **kwargs, **client_kwargs)
+
+    from .backend import s3_client
+    from .io.archive import read_archive_document
+    from .smile.reader import SmileReader
+
+    client = s3_client(resolved, session=session, **client_kwargs)
+    data = client.get_object(Bucket=resolved.bucket, Key=resolved.key)["Body"].read()
+    reader = SmileReader(data)
+    archive = read_archive_document(reader)
+    archive._source_path = resolved
+    return archive
+
+
 __all__ = [
-    "open", "write",
+    "open", "write", "open_s3",
     "Archive", "Molecule", "MarsMetadata", "MarsRegion", "MarsPosition",
     "MarsBdvSource", "MarsDocument", "Properties", "ARCHIVE_TYPES",
     "SingleMolecule", "DnaMolecule", "DefaultMolecule",
     "MartianObject", "PeakShape",
     "TransverseFlowMolecule", "ReplicationForkShape",
     "new_molecule_uid", "new_metadata_uid",
+    "S3Location",
     "YamaFormatError", "SmileFormatError", "UnsupportedSchemaError",
 ]

@@ -14,5 +14,8 @@ setup(
       'pandas',
       'matplotlib'
     ],
+    extras_require={
+      's3': ['boto3'],
+    },
     tests_requires=['pytest']
 )

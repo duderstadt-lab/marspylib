@@ -18,6 +18,14 @@ Only dependency requirements are `numpy`, `pandas`, and `matplotlib` — this
 package can be installed in any plain Python/conda environment and does not
 require Fiji, ImageJ, or a JVM of any kind.
 
+Reading/writing archives on S3 (see [Using S3](#using-s3) below) needs
+`boto3`, kept as an optional extra so it's not a hard dependency for users
+who only ever work with local files:
+
+```
+pip install marspylib[s3]
+```
+
 ## Usage
 
 ```python
@@ -149,6 +157,61 @@ archive.save()
 
 `put()`/`put_metadata()` are also how you add a brand-new record (a UID
 that wasn't already in the archive) — see the mapping table below.
+
+### Using S3
+
+Archives (single `.yama` files or `.yama.store` virtual archives) can be
+opened and saved directly on S3 or any S3-compatible endpoint, with no local
+copy needed — `open_s3()`/`archive.save_s3()` mirror `open()`/`archive.save()`
+exactly, including the lazy loading and immediate-delete-on-`remove()`
+behavior for `.yama.store`.
+
+A location is three things: the endpoint host (`server_address`), the
+`bucket`, and the `key` (path to the file or `.yama.store` directory within
+the bucket). **Passing these three separately is the recommended way** — it's
+unambiguous, unlike a combined URL, which can be misread if a bucket or host
+name happens to contain a stray `.`:
+
+```python
+import marspylib.yama as yama
+
+archive = yama.open_s3(server_address="s3.amazonaws.com",
+                        bucket="my-bucket", key="path/to/experiment.yama")
+
+archive["some-uid"].add_tag("reviewed")
+archive.save()   # no args -- saves back to the same S3 location it was opened from
+
+archive.save_s3(server_address="s3.amazonaws.com",
+                 bucket="my-bucket", key="path/to/experiment.yama.store")
+```
+
+If you already work with combined virtual-hosted-style URLs
+(`https://<bucket>.<server_address>/<key>`), those are also supported, as a
+single `location` argument in place of the three separate fields:
+
+```python
+archive = yama.open_s3("https://my-bucket.s3.amazonaws.com/path/to/experiment.yama")
+archive.save_s3("https://my-bucket.s3.amazonaws.com/path/to/experiment.yama.store")
+```
+
+Both forms work with `.yama.store` too, dispatched the same way `save()`
+dispatches locally — by whether `key` ends in `.yama.store`.
+
+Credentials are never passed through this API directly. By default,
+`open_s3()`/`save_s3()` resolve credentials the standard `boto3` way —
+environment variables, `~/.aws/credentials`, SSO cache, IAM role — the same
+chain the AWS SDK for Java (and so Fiji/mars-core) uses, so if your
+credentials are already configured locally, nothing further needs to be set
+up here. To use a specific profile or override resolution, pass your own
+`boto3.Session`:
+
+```python
+import boto3
+
+session = boto3.Session(profile_name="my-profile")
+archive = yama.open_s3(server_address="s3.amazonaws.com", bucket="my-bucket",
+                        key="path/to/experiment.yama", session=session)
+```
 
 ### Supported archive types
 

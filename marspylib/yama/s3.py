@@ -1,0 +1,90 @@
+"""S3 (or any S3-compatible endpoint) location handling for .yama archives.
+
+An archive on S3 is identified by three things: the endpoint host (`server_address`,
+e.g. "s3.example-storage.org" -- an institutional/self-hosted S3-compatible
+endpoint works exactly like AWS itself here, just with a different host),
+the `bucket`, and the `key` (the path to the .yama file or .yama.store
+"directory" within the bucket). `S3Location` holds these three explicitly --
+the recommended way to construct one, since it can't be misread the way a
+combined URL sometimes can -- and also parses/produces the combined
+virtual-hosted-style URL some setups use historically
+(`https://<bucket>.<server_address>/<key>`), so both forms are supported.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from urllib.parse import urlsplit
+
+
+@dataclass
+class S3Location:
+    server_address: str
+    bucket: str
+    key: str
+    secure: bool = True
+
+    def __post_init__(self) -> None:
+        self.server_address = self.server_address.strip("/")
+        self.key = self.key.lstrip("/")
+
+    @property
+    def scheme(self) -> str:
+        return "https" if self.secure else "http"
+
+    @property
+    def endpoint_url(self) -> str:
+        """The URL to hand to an S3 client as `endpoint_url` -- no bucket,
+        no key, just scheme + host."""
+        return f"{self.scheme}://{self.server_address}"
+
+    @property
+    def virtual_hosted_url(self) -> str:
+        """The combined `https://<bucket>.<server_address>/<key>` form."""
+        return f"{self.scheme}://{self.bucket}.{self.server_address}/{self.key}"
+
+    @classmethod
+    def from_url(cls, url: str) -> "S3Location":
+        """Parses a combined virtual-hosted-style URL
+        (`https://<bucket>.<server_address>/<key>`) -- the bucket is taken
+        as the first label of the hostname, everything after the first "."
+        is the server address, matching how these URLs are actually
+        resolved (the bucket is a DNS subdomain of the endpoint host)."""
+        parts = urlsplit(url)
+        if not parts.scheme or not parts.netloc:
+            raise ValueError(
+                f"not a valid S3 URL (expected https://<bucket>.<server_address>/<key>): {url!r}"
+            )
+        if "." not in parts.netloc:
+            raise ValueError(
+                f"S3 URL host {parts.netloc!r} has no bucket subdomain "
+                f"(expected https://<bucket>.<server_address>/<key>): {url!r}"
+            )
+        bucket, server_address = parts.netloc.split(".", 1)
+        return cls(
+            server_address=server_address,
+            bucket=bucket,
+            key=parts.path,
+            secure=parts.scheme == "https",
+        )
+
+
+def resolve_s3_location(location=None, *, server_address: str | None = None,
+                         bucket: str | None = None, key: str | None = None,
+                         secure: bool = True) -> S3Location:
+    """Shared argument-resolution for open_s3()/save_s3(): accepts either an
+    explicit `location` (an S3Location, or a combined virtual-hosted-style
+    URL string, parsed automatically) or the three fields given separately."""
+    if location is not None:
+        if isinstance(location, S3Location):
+            return location
+        if isinstance(location, str):
+            return S3Location.from_url(location)
+        raise TypeError(f"location must be an S3Location or a URL string, got {type(location)!r}")
+    if server_address is None or bucket is None or key is None:
+        raise ValueError(
+            "provide either `location` (an S3Location, or a combined "
+            "https://<bucket>.<server_address>/<key> URL string) or all three of "
+            "server_address=, bucket=, key="
+        )
+    return S3Location(server_address=server_address, bucket=bucket, key=key, secure=secure)

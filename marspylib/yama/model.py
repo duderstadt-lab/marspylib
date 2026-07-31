@@ -32,6 +32,7 @@ from typing import Any, Iterator
 
 import pandas as pd
 
+from .s3 import S3Location
 from .uid import new_metadata_uid, new_molecule_uid
 
 DEFAULT_ARCHIVE_TYPE = "de.mpg.biochem.mars.molecule.SingleMoleculeArchive"
@@ -259,10 +260,15 @@ class Archive:
     """
 
     def __init__(self, properties: Properties, metadata: dict[str, MarsMetadata],
-                 molecules: dict[str, Molecule], source_path: Path | None = None):
+                 molecules: dict[str, Molecule],
+                 source_path: Path | S3Location | None = None):
         self.properties = properties
         self._metadata = metadata
         self._molecules = molecules
+        # Where this archive was opened from, or last saved to -- a Path for
+        # a local .yama/.yama.store, an S3Location for one opened via
+        # open_s3(). save() dispatches on which type this is; save_s3()
+        # requires it to be an S3Location (or an explicit location argument).
         self._source_path = source_path
 
     @property
@@ -435,13 +441,20 @@ class Archive:
         self.properties.segment_table_names = segment_table_names
 
     def save(self, path: str | Path | None = None) -> None:
-        """Write this archive out. If `path` is omitted, reuses the path it
-        was opened from. Whether the result is a single-file .yama or a
-        .yama.store virtual archive is decided purely by whether `target`'s
-        name ends in ".yama.store" -- so opening a virtual store and calling
-        .save() with no args updates it in place, .save("out.yama") flattens
-        it into one file, and .save("out.yama.store") on a single-file-backed
-        archive creates a new virtual store, all through the same method."""
+        """Write this archive out to the local filesystem. If `path` is
+        omitted, reuses where it was opened from -- including reusing an S3
+        location, dispatching to save_s3(), since "save back to wherever
+        this came from" should work the same way regardless of backend.
+        Whether the result is a single-file .yama or a .yama.store virtual
+        archive is decided purely by whether `target`'s name ends in
+        ".yama.store" -- so opening a virtual store and calling .save() with
+        no args updates it in place, .save("out.yama") flattens it into one
+        file, and .save("out.yama.store") on a single-file-backed archive
+        creates a new virtual store, all through the same method."""
+        if path is None and isinstance(self._source_path, S3Location):
+            self.save_s3()
+            return
+
         from .io.store import looks_like_virtual_store_path, write_virtual_store
 
         target = Path(path) if path is not None else self._source_path
@@ -462,3 +475,51 @@ class Archive:
                 write_archive_document(writer, self)
                 writer.close()
         self._source_path = target
+
+    def save_s3(self, location: "S3Location | str | None" = None, *,
+                server_address: str | None = None, bucket: str | None = None,
+                key: str | None = None, secure: bool = True,
+                session=None, **client_kwargs) -> None:
+        """Write this archive out to S3 (or an S3-compatible endpoint).
+        Like save(), dispatches between a single .yama object and a
+        .yama.store "directory" of objects based on whether `key` ends in
+        ".yama.store". If no location is given at all, reuses the S3
+        location this archive was opened from (or last saved to).
+
+        `session` defaults to a plain boto3.Session(), which resolves
+        credentials the standard boto3 way (environment variables,
+        ~/.aws/credentials, SSO cache, IAM role) -- if your credentials are
+        already set up locally, no further configuration is needed here."""
+        from .s3 import resolve_s3_location
+
+        if location is None and server_address is None and bucket is None and key is None:
+            if not isinstance(self._source_path, S3Location):
+                raise ValueError(
+                    "no S3 location given, and this archive wasn't opened from S3 -- "
+                    "pass location=, or server_address=/bucket=/key="
+                )
+            resolved = self._source_path
+        else:
+            resolved = resolve_s3_location(location, server_address=server_address,
+                                            bucket=bucket, key=key, secure=secure)
+
+        self._sync_properties_before_save()
+
+        if resolved.key.endswith(".yama.store"):
+            from .io.store import write_virtual_store_s3
+            write_virtual_store_s3(resolved, self, session=session, **client_kwargs)
+        else:
+            from .backend import s3_client
+            from .io.archive import write_archive_document
+            from .smile.writer import SmileWriter
+            import io as _io
+
+            buf = _io.BytesIO()
+            writer = SmileWriter(buf)
+            writer.write_header()
+            write_archive_document(writer, self)
+            writer.close()
+            client = s3_client(resolved, session=session, **client_kwargs)
+            client.put_object(Bucket=resolved.bucket, Key=resolved.key, Body=buf.getvalue())
+
+        self._source_path = resolved
