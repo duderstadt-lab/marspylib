@@ -168,6 +168,20 @@ class _LazyMoleculeMap:
         self._overrides[uid] = molecule
         self._cache.pop(uid, None)
 
+    def __delitem__(self, uid: str) -> None:
+        """Matches mars-core's remove(): deletes the underlying .sml file
+        immediately (not deferred to the next save()) -- see
+        MoleculeArchiveFSSource.removeMolecule()."""
+        if uid not in self._uid_set:
+            raise KeyError(uid)
+        self._uid_set.discard(uid)
+        self._uids.remove(uid)
+        self._cache.pop(uid, None)
+        self._overrides.pop(uid, None)
+        path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
+        if path.exists():
+            path.unlink()
+
     def __contains__(self, uid: str) -> bool:
         return uid in self._uid_set
 
@@ -176,6 +190,9 @@ class _LazyMoleculeMap:
 
     def __iter__(self):
         return iter(self._uids)
+
+    def uids(self) -> list[str]:
+        return list(self._uids)
 
     def values(self):
         for uid in self._uids:
@@ -224,6 +241,18 @@ class _LazyMetadataMap:
             self._uids.append(uid)
         self._cache[uid] = metadata
 
+    def __delitem__(self, uid: str) -> None:
+        """Matches mars-core's removeMetadata(): deletes the underlying
+        .sml file immediately -- see MoleculeArchiveFSSource.removeMetadata()."""
+        if uid not in self._uid_set:
+            raise KeyError(uid)
+        self._uid_set.discard(uid)
+        self._uids.remove(uid)
+        self._cache.pop(uid, None)
+        path = self._dir / f"{uid}{STORE_FILE_EXTENSION}"
+        if path.exists():
+            path.unlink()
+
     def __contains__(self, uid: str) -> bool:
         return uid in self._uid_set
 
@@ -232,6 +261,9 @@ class _LazyMetadataMap:
 
     def __iter__(self):
         return iter(self._uids)
+
+    def uids(self) -> list[str]:
+        return list(self._uids)
 
     def values(self):
         for uid in self._uids:

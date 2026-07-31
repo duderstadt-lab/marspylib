@@ -288,9 +288,51 @@ class Archive:
     def get_metadata(self, uid: str) -> MarsMetadata | None:
         return self._metadata.get(uid)
 
+    def contains_metadata(self, uid: str) -> bool:
+        return uid in self._metadata
+
     def metadata_has_tag(self, metadata_uid: str, tag: str) -> bool:
         meta = self._metadata.get(metadata_uid)
         return meta is not None and meta.has_tag(tag)
+
+    @property
+    def is_virtual(self) -> bool:
+        """True if this archive is backed by a .yama.store virtual directory
+        (lazy per-record loading) rather than a fully in-memory .yama file."""
+        from .io.store import _LazyMoleculeMap
+        return isinstance(self._molecules, _LazyMoleculeMap)
+
+    def molecule_uids(self) -> list[str]:
+        """All molecule UIDs, without loading any record bodies -- cheap
+        even for a large lazy-loaded .yama.store."""
+        uids = getattr(self._molecules, "uids", None)
+        return uids() if uids is not None else list(self._molecules.keys())
+
+    def metadata_uids(self) -> list[str]:
+        """All metadata UIDs, without loading any record bodies."""
+        uids = getattr(self._metadata, "uids", None)
+        return uids() if uids is not None else list(self._metadata.keys())
+
+    def get_comments(self) -> str:
+        doc = self.properties.documents.get("Comments")
+        return doc.content if doc is not None else ""
+
+    def set_comments(self, comments: str) -> None:
+        self.properties.documents["Comments"] = MarsDocument(name="Comments", content=comments)
+
+    def remove(self, uid: str) -> None:
+        """Remove a molecule record by UID, if present. On a .yama.store-backed
+        archive this deletes the underlying Molecules/<uid>.sml file
+        immediately, matching mars-core's remove() -- not deferred to the
+        next save(). On a single-file archive it just drops it from the
+        in-memory set, taking effect on the next save()."""
+        if uid in self._molecules:
+            del self._molecules[uid]
+
+    def remove_metadata(self, uid: str) -> None:
+        """Remove a metadata record by UID, if present. See remove()."""
+        if uid in self._metadata:
+            del self._metadata[uid]
 
     def put(self, molecule: Molecule) -> None:
         """Add a new molecule (keyed by molecule.uid), or replace an

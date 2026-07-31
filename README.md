@@ -86,6 +86,19 @@ molecule = yama.SingleMolecule(uid="my-own-id")   # or supply your own
 `TransverseFlowArchive`) to the archive-type string mars-core expects — use
 whichever matches the `Molecule` subclass you're building records with.
 
+### Removing records
+
+```python
+archive.remove("some-uid")           # drop a molecule
+archive.remove_metadata("meta-uid")  # drop a metadata record
+archive.save()
+```
+
+For a `.yama.store` archive, `remove()`/`remove_metadata()` delete the
+underlying file immediately (matching mars-core), not deferred to the next
+`save()`; for a single-file archive it just drops the record from memory,
+taking effect the next time you `save()`.
+
 ### Virtual archives (`.yama.store`)
 
 Large archives saved from Fiji as a `.yama.store` directory (rather than a
@@ -180,13 +193,16 @@ shape.lagging_x, shape.lagging_y       # lagging-strand daughter outline
 shape.leading_intensity["GFP"][7]      # per-channel intensity, keyed by coordinate
 ```
 
-## Coming from Java/Fiji: method name mapping
+## Coming from Java/Groovy/Fiji: method name mapping
 
 This library's classes cover the same data as mars-core's Java classes, but
 follow Python naming conventions (`snake_case`, attributes instead of
-getters/setters) rather than mirroring the Java API name-for-name. Where a
-Java call was a getter/setter pair, the Python side is usually just a plain
-attribute you can read or assign directly.
+getters/setters) rather than mirroring the Java API name-for-name. This
+applies equally to Groovy scripts written against Mars in Fiji's script
+editor — Groovy calls Java methods with identical syntax (`molecule.addTag(tag)`
+is valid in both), so everywhere this table says "Java" it means Groovy too.
+Where a Java/Groovy call was a getter/setter pair, the Python side is
+usually just a plain attribute you can read or assign directly.
 
 **`Archive`** (`de.mpg.biochem.mars.molecule.MoleculeArchive`)
 
@@ -206,6 +222,14 @@ attribute you can read or assign directly.
 | `archive.saveAsVirtualStore(dir)` | `archive.save(path)` where `path` ends in `.yama.store` |
 | `archive.put(molecule)` | `archive.put(molecule)` |
 | `archive.putMetadata(m)` | `archive.put_metadata(m)` |
+| `archive.remove(uid)` / `remove(molecule)` | `archive.remove(uid)` |
+| `archive.removeMetadata(uid)` / `removeMetadata(m)` | `archive.remove_metadata(uid)` |
+| `archive.contains(uid)` | `uid in archive` |
+| `archive.containsMetadata(uid)` | `archive.contains_metadata(uid)` |
+| `archive.getMoleculeUIDs()` | `archive.molecule_uids()` |
+| `archive.getMetadataUIDs()` | `archive.metadata_uids()` |
+| `archive.isVirtual()` | `archive.is_virtual` (attribute) |
+| `archive.getComments()` / `setComments(s)` | `archive.get_comments()` / `archive.set_comments(s)` |
 
 **`Molecule` / `MarsRecord`** (`de.mpg.biochem.mars.molecule.Molecule`, `MarsRecord`)
 
@@ -260,9 +284,6 @@ attribute you can read or assign directly.
 | `properties.getPositionSet()` | `properties.position_set` |
 | `properties.getSegmentsTableNames()` | `properties.segment_table_names` |
 | document access | `properties.documents[name]` |
-
-**Not yet supported:** removing molecules/metadata records from an archive
-(there's a `put`, but no `remove`/`delete` yet).
 
 Note `archive.save()` recomputes `properties.tag_set`/`channel_set`/
 `parameter_set`/`region_set`/`position_set`/`table_column_set`/
