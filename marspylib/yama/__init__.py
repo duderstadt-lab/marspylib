@@ -10,6 +10,13 @@
             ...
     molecule = archive["some-uid"]     # random access by UID
     archive.save("experiment_out.yama")
+
+`yama.open()` also accepts a `.yama.store` virtual archive directory, in
+which case records are loaded lazily on access rather than all at once.
+Since not-yet-accessed records are only read from disk the moment you touch
+them, the store directory must still exist at that point -- don't move,
+delete, or let a temporary directory holding one go out of scope while an
+Archive opened from it is still in use.
 """
 
 from __future__ import annotations

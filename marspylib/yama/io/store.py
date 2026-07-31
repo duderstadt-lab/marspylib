@@ -1,17 +1,18 @@
-"""Read-only support for .yama.store virtual archives: lazy per-record
-loading from a directory tree instead of one big in-memory document.
+"""Support for .yama.store virtual archives: lazy per-record loading from a
+directory tree instead of one big in-memory document, and writing archives
+back out in that same layout.
 
 Transcribed from mars-core's MoleculeArchiveFSSource (layout/UID scanning),
-AbstractMoleculeArchiveIndex (indexes.<ext> shape), and
-AbstractMoleculeArchive.loadVirtualStore/rebuildIndexes (read order and
-missing-index fallback). Only the Smile ('.sml') encoding is supported,
-matching this port's single-file scope.
+AbstractMoleculeArchiveIndex (indexes.<ext> shape and addMolecule/addMetadata
+population), and AbstractMoleculeArchive.loadVirtualStore/rebuildIndexes/
+saveAsVirtualStore (read/write order and missing-index fallback). Only the
+Smile ('.sml') encoding is supported, matching this port's single-file scope.
 
 Each file in the store (MoleculeArchiveProperties.sml, indexes.sml, and
 every per-record Molecules/<uid>.sml / Metadata/<uid>.sml) is its own
 independent Smile document with its own 4-byte header -- mars-core opens a
-fresh SmileGenerator/SmileParser per file, so each is read exactly like a
-tiny single-file .yama.
+fresh SmileGenerator/SmileParser per file, so each is read/written exactly
+like a tiny single-file .yama.
 """
 
 from __future__ import annotations
@@ -22,9 +23,10 @@ from pathlib import Path
 from ..errors import YamaFormatError
 from ..model import ARCHIVE_TO_MOLECULE_TYPE, Archive, MarsMetadata, Molecule
 from ..smile.reader import SmileReader, SmileToken
-from .metadata import read_metadata
-from .molecule import read_molecule
-from .properties import read_properties
+from ..smile.writer import SmileWriter
+from .metadata import read_metadata, write_metadata
+from .molecule import read_molecule, write_molecule
+from .properties import read_properties, write_properties
 
 PROPERTIES_FILE_NAME = "MoleculeArchiveProperties"
 INDEXES_FILE_NAME = "indexes"
@@ -37,6 +39,11 @@ DEFAULT_MOLECULE_CACHE_SIZE = 128
 
 def is_virtual_store(path: Path) -> bool:
     return path.is_dir() and path.name.endswith(".yama.store")
+
+
+def looks_like_virtual_store_path(path: Path) -> bool:
+    """Like is_virtual_store, but for a save target that may not exist yet."""
+    return path.name.endswith(".yama.store")
 
 
 def _detect_extension(store_dir: Path) -> str:
@@ -243,3 +250,88 @@ def open_virtual_store(store_dir: Path, molecule_cache_size: int = DEFAULT_MOLEC
     metadata = _LazyMetadataMap(metadata_dir, metadata_uids)
 
     return Archive(properties, metadata, molecules, source_path=store_dir)
+
+
+def _write_record_document(path: Path, write_fn) -> None:
+    with open(path, "wb") as stream:
+        writer = SmileWriter(stream)
+        writer.write_header()
+        write_fn(writer)
+        writer.close()
+
+
+def _write_index(path: Path, archive: Archive) -> None:
+    """Mirrors AbstractMoleculeArchiveIndex.createIOMaps's write order
+    ("metadata" array, then "molecules" array) and addMolecule/addMetadata's
+    unconditional population -- every field is always written, matching what
+    a freshly rebuilt index actually contains (see module docstring)."""
+
+    def write(writer: SmileWriter) -> None:
+        writer.write_start_object()
+
+        writer.write_field_name("metadata")
+        writer.write_start_array()
+        for meta in archive.metadata:
+            writer.write_start_object()
+            writer.write_field_name("uid")
+            writer.write_string(meta.uid)
+            writer.write_field_name("tags")
+            writer.write_start_array()
+            for tag in meta.tags:
+                writer.write_string(tag)
+            writer.write_end_array()
+            writer.write_end_object()
+        writer.write_end_array()
+
+        writer.write_field_name("molecules")
+        writer.write_start_array()
+        for molecule in archive:
+            writer.write_start_object()
+            writer.write_field_name("uid")
+            writer.write_string(molecule.uid)
+            writer.write_field_name("metadataUID")
+            writer.write_string(molecule.metadata_uid)
+            writer.write_field_name("tags")
+            writer.write_start_array()
+            for tag in molecule.tags:
+                writer.write_string(tag)
+            writer.write_end_array()
+            writer.write_field_name("channel")
+            writer.write_int(molecule.channel)
+            writer.write_field_name("image")
+            writer.write_int(molecule.image)
+            writer.write_end_object()
+        writer.write_end_array()
+
+        writer.write_end_object()
+
+    _write_record_document(path, write)
+
+
+def write_virtual_store(store_dir: Path, archive: Archive) -> None:
+    """Writes (or overwrites in place) a .yama.store directory for `archive`.
+
+    Mirrors mars-core's saveAsVirtualStore order: every metadata and molecule
+    record file first, then indexes.<ext>, then MoleculeArchiveProperties.<ext>
+    last. Iterating `archive` here forces every record to be loaded (lazily,
+    from wherever it currently lives) so the written store is always a
+    complete, self-consistent snapshot -- not just whatever happened to be
+    cached.
+    """
+    metadata_dir = store_dir / METADATA_SUBDIRECTORY_NAME
+    molecules_dir = store_dir / MOLECULES_SUBDIRECTORY_NAME
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    molecules_dir.mkdir(parents=True, exist_ok=True)
+
+    for meta in archive.metadata:
+        _write_record_document(metadata_dir / f"{meta.uid}{STORE_FILE_EXTENSION}",
+                                lambda w, m=meta: write_metadata(w, m))
+
+    for molecule in archive:
+        _write_record_document(molecules_dir / f"{molecule.uid}{STORE_FILE_EXTENSION}",
+                                lambda w, mol=molecule: write_molecule(w, mol, archive.archive_type))
+
+    _write_index(store_dir / f"{INDEXES_FILE_NAME}{STORE_FILE_EXTENSION}", archive)
+
+    _write_record_document(store_dir / f"{PROPERTIES_FILE_NAME}{STORE_FILE_EXTENSION}",
+                            lambda w: write_properties(w, archive.properties))

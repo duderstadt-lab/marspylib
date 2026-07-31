@@ -3,8 +3,6 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import pytest
-
 import marspylib.yama as yama
 from marspylib.yama.io.store import _LazyMetadataMap, _LazyMoleculeMap
 
@@ -62,10 +60,57 @@ def test_lazy_metadata_loading_and_tag_check():
     assert not archive.metadata_has_tag("meta1", "nope")
 
 
-def test_save_with_no_path_raises():
-    archive = yama.open(STORE)
-    with pytest.raises(ValueError, match="virtual archive"):
+def test_save_in_place_updates_store():
+    with tempfile.TemporaryDirectory() as tmp:
+        work_store = Path(tmp) / "work.yama.store"
+        shutil.copytree(STORE, work_store)
+
+        archive = yama.open(work_store)
+        archive["mol1"].add_tag("python_edited")
+        archive["mol2"].parameters["new_param"] = 3.75
         archive.save()
+
+        reopened = yama.open(work_store)
+        assert reopened["mol1"].tags == ["accepted", "python_edited"]
+        assert reopened["mol2"].parameters["new_param"] == 3.75
+        # untouched records survive the round-trip unchanged
+        assert reopened["mol3"].tags == ["accepted", "reviewed"]
+        assert list(reopened.metadata)[0].uid == "meta1"
+
+
+def test_save_in_place_index_reflects_current_state():
+    from marspylib.yama.smile.reader import SmileReader, read_generic_value
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work_store = Path(tmp) / "work.yama.store"
+        shutil.copytree(STORE, work_store)
+
+        archive = yama.open(work_store)
+        archive["mol1"].add_tag("python_edited")
+        archive.save()
+
+        reader = SmileReader((work_store / "indexes.sml").read_bytes())
+        index = read_generic_value(reader, reader.next_token())
+        by_uid = {m["uid"]: m for m in index["molecules"]}
+        assert by_uid["mol1"]["tags"] == ["accepted", "python_edited"]
+        assert by_uid["mol1"]["metadataUID"] == "meta1"
+        assert by_uid["mol1"]["channel"] == 1
+        assert {m["uid"] for m in index["metadata"]} == {"meta1"}
+
+
+def test_save_single_file_archive_as_new_virtual_store():
+    single_file = Path(__file__).parent / "fixtures" / "yama" / "single_molecule_archive.yama"
+    archive = yama.open(single_file)
+    with tempfile.TemporaryDirectory() as tmp:
+        new_store = Path(tmp) / "new.yama.store"
+        archive.save(new_store)
+        reopened = yama.open(new_store)
+
+        # lazy-loaded records need the directory to still exist -- assert
+        # while still inside the tempdir's lifetime, not after
+        assert len(reopened) == 3
+        assert reopened["mol3"].tags == ["accepted", "reviewed"]
+        assert reopened["mol1"].table["label"].tolist()[0] == "f0"
 
 
 def test_flatten_to_single_file():
