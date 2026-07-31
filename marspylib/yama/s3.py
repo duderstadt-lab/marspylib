@@ -35,7 +35,19 @@ class S3Location:
     secure: bool = True
 
     def __post_init__(self) -> None:
-        self.server_address = self.server_address.strip("/")
+        address = self.server_address.strip("/")
+        # server_address is meant to be a bare host[:port] (see endpoint_url
+        # below) -- but a "https://" or "http://" prefix is a natural enough
+        # thing to paste in here that it's worth accepting rather than
+        # silently producing a broken doubled-up scheme in endpoint_url. An
+        # explicit scheme here overrides `secure`.
+        if address.startswith("https://"):
+            self.secure = True
+            address = address[len("https://"):]
+        elif address.startswith("http://"):
+            self.secure = False
+            address = address[len("http://"):]
+        self.server_address = address.strip("/")
         self.key = self.key.lstrip("/")
 
     @property

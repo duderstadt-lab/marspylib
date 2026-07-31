@@ -79,6 +79,25 @@ def test_resolve_s3_location_passes_through_existing_location():
     assert resolve_s3_location(location) is location
 
 
+def test_location_server_address_accepts_https_prefix():
+    location = S3Location(server_address="https://storage.example.org:9000", bucket="b", key="k")
+    assert location.server_address == "storage.example.org:9000"
+    assert location.secure is True
+    assert location.endpoint_url == "https://storage.example.org:9000"
+
+
+def test_location_server_address_accepts_http_prefix():
+    location = S3Location(server_address="http://storage.example.org:9000", bucket="b", key="k")
+    assert location.server_address == "storage.example.org:9000"
+    assert location.secure is False
+    assert location.endpoint_url == "http://storage.example.org:9000"
+
+
+def test_location_server_address_without_prefix_respects_secure_flag():
+    location = S3Location(server_address="storage.example.org:9000", bucket="b", key="k", secure=False)
+    assert location.endpoint_url == "http://storage.example.org:9000"
+
+
 def test_resolve_s3_location_from_separate_fields():
     location = resolve_s3_location(server_address="s3.example.org", bucket="b", key="k.yama")
     assert location == S3Location(server_address="s3.example.org", bucket="b", key="k.yama")

@@ -185,6 +185,11 @@ archive.save_s3(server_address="storage.example.org",
                  bucket="my-bucket", key="path/to/experiment.yama.store")
 ```
 
+`server_address` defaults to `https`; for a plain-`http` (no TLS) endpoint,
+either pass `secure=False` or just include the scheme directly in
+`server_address` (`"https://..."`/`"http://..."` are both accepted and
+override `secure` accordingly) — whichever you find easier to read.
+
 If you already work with combined virtual-hosted-style URLs
 (`https://<bucket>.s3.<server_address>/<key>`), those are also supported, as
 a single `location` argument in place of the three separate fields:
