@@ -1,0 +1,62 @@
+# Smile codec fixtures
+
+The `.bin` files in `../smile/` are real Smile-binary bytes written by
+Jackson's own `SmileGenerator` (not by marspylib), used as ground truth for
+`tests/yama/test_smile_codec.py`. `Gen.java` is the generator program that
+produced them.
+
+## Reproducing
+
+Requires a JDK and the `jackson-dataformat-smile` 2.18.0 jar (and its
+`jackson-core`/`jackson-databind`/`jackson-annotations` dependencies of the
+matching version) available locally, e.g. via a local Maven repository.
+
+```bash
+CP="$HOME/.m2/repository/com/fasterxml/jackson/dataformat/jackson-dataformat-smile/2.18.0/jackson-dataformat-smile-2.18.0.jar"
+CP="$CP:$HOME/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.18.0/jackson-core-2.18.0.jar"
+CP="$CP:$HOME/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.0/jackson-databind-2.18.0.jar"
+CP="$CP:$HOME/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.18.0/jackson-annotations-2.18.0.jar"
+
+mkdir -p out
+javac -cp "$CP" -d out Gen.java
+java -cp "$CP:out" gen.Gen
+```
+
+This writes `basic_mixed.bin`, `shared_names_repeat.bin`,
+`shared_names_wraparound.bin`, `numbers_all_types.bin`,
+`strings_all_kinds.bin`, `long_field_name.bin`, `binary_blob.bin`, and
+`nested_empty.bin` — copy them into `../smile/`.
+
+`pom.xml` is provided for reference/reproducibility (a from-scratch build via
+`mvn exec:java` needs network access to fetch the `exec-maven-plugin`; the
+`javac`/`java` invocation above avoids that and is what was actually used).
+
+These fixtures only exercise the general-purpose Smile binary codec (no Mars
+schema knowledge) — mars-core is not involved.
+
+## MarsTable and full-archive fixtures (`../table/`, `../yama/`)
+
+`GenTable.java` and `GenArchive.java` use real `mars-core` classes
+(`MarsTable`, `SingleMoleculeArchive`, `DnaMoleculeArchive`,
+`DefaultMoleculeArchive`, `MarsOMEMetadata`, ...) to write genuine
+Fiji-compatible fixtures — these are the actual acceptance test for the
+Python port, not just the binary codec.
+
+```bash
+cd /path/to/mars-core && mvn -q -o dependency:build-classpath -Dmdep.outputFile=/tmp/mars-core-cp.txt
+CP="$(cat /tmp/mars-core-cp.txt):/path/to/mars-core/target/classes"
+
+mkdir -p out
+javac -cp "$CP" -d out GenTable.java GenArchive.java
+java -cp "$CP:out" gen.GenTable    # -> mars_table.bin, mars_table_empty.bin (copy into ../table/)
+java -cp "$CP:out" gen.GenArchive  # -> single/dna/default_molecule_archive.yama, empty_archive.yama (copy into ../yama/)
+```
+
+`ReadPython.java` (also in this directory) is not a fixture generator — it's
+the harness used to confirm real mars-core can read a `.yama` file written
+by this port's Python writer (open a fixture with `marspylib.yama`, mutate
+it, `archive.save(...)`, then run `java -cp "$CP:out" gen.ReadPython
+<path>.yama` and eyeball the printed fields against what Python wrote). This
+is the acceptance bar from the original design doc: mars-core reading what
+Python writes and getting semantically identical records, not byte-identical
+files.

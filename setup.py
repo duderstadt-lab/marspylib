@@ -5,16 +5,14 @@ setup(
     name='marspylib',
     packages=find_packages(),
     platforms=['any'],
-    version="0.1.4",
-    description='Library containing python Fiji launcher and python functions to interact with Mars Archives',
+    version="0.2.0",
+    description='Pure-Python library for reading and writing Mars Molecule Archives (.yama) and utility functions for working with them',
     author='Karl Duderstadt, Nadia Huisjes, Thomas Retzer',
     url='https://github.com/duderstadt-lab/marspylib',
     install_requires=[
-      'jpype1 >=1.3.0',
-      'pyimagej',
-      'scyjava',
+      'numpy',
+      'pandas',
       'matplotlib'
     ],
-    scripts=['bin/launchFiji'],
     tests_requires=['pytest']
 )

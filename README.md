@@ -1,34 +1,37 @@
 **Mars** - **M**olecule **AR**chive **S**uite
 
-Python library with utility functions and converters for working with mars.
-Complete Molecule ARchive Suite (Mars) documentation including a guide to
-working with mars data structures in python can be found at [mars-docs](https://duderstadt-lab.github.io/mars-docs/).
+Pure-Python library for reading and writing Mars Molecule Archives (`.yama`)
+and utility functions for working with them — no JVM, no Fiji install
+required. Complete Molecule ARchive Suite (Mars) documentation including a
+guide to working with mars data structures in python can be found at
+[mars-docs](https://duderstadt-lab.github.io/mars-docs/).
 
 ## Installation
-
-This project should be installed in an activated conda environment containing
-pyimagej. This can be accomplished with pip:
 
 ```
 pip install marspylib
 ```
+
 This project should soon be available for installation through [conda forge](https://github.com/conda-forge/staged-recipes/pull/18733).
 
-## How to activate Conda Python 3 scripting to Fiji
+Only dependency requirements are `numpy`, `pandas`, and `matplotlib` — this
+package can be installed in any plain Python/conda environment and does not
+require Fiji, ImageJ, or a JVM of any kind.
 
-To add a Conda Python 3 scripting language to Fiji follow the installation
-instructions above. Install a local copy of Fiji and activate the Mars update
-site. Make sure to fully update Fiji and ensure Mars is functioning properly
-and you Fiji includes javafx. The Mars update site will provide the scripting-python
-jar required to work with the Conda Python 3 scripting language.
+## Usage
 
-Then launch Fiji from inside your activated conda environment containing pyimagej
-and marspylib. You can do this using the launchFiji script included with marspylib:
+```python
+import marspylib.yama as yama
 
+archive = yama.open("experiment.yama")
+print(archive.properties.number_of_molecules)
+
+for molecule in archive:
+    df = molecule.table            # pandas.DataFrame
+    if "accepted" in molecule.tags:
+        ...
+
+molecule = archive["some-uid"]     # random access by UID
+
+archive.save("experiment_out.yama")
 ```
-launchFiji /path/to/your/Fiji.app
-```
-
-The Fiji gui should appear and you should be able to use the Conda Python 3 scripting
-language. Now you will also have full access to Conda Python 3 based features in
-Mars.
