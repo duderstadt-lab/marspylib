@@ -1,9 +1,13 @@
 **Mars** - **M**olecule **AR**chive **S**uite
 
+[![Documentation](https://readthedocs.org/projects/marspylib/badge/?version=latest)](https://marspylib.readthedocs.io/en/latest/?badge=latest)
+
 Pure-Python library for reading and writing Mars Molecule Archives (`.yama`)
 and utility functions for working with them — no JVM, no Fiji install
-required. Complete Molecule ARchive Suite (Mars) documentation including a
-guide to working with mars data structures in python can be found at
+required. Full API reference documentation is available at
+[marspylib.readthedocs.io](https://marspylib.readthedocs.io/). Complete
+Molecule ARchive Suite (Mars) documentation including a guide to working
+with mars data structures in python can be found at
 [mars-docs](https://duderstadt-lab.github.io/mars-docs/).
 
 ## Installation
