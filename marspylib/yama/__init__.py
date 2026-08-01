@@ -1,4 +1,4 @@
-"""Pure-Python reader/writer for Mars MoleculeArchive .yama files.
+"""Pure-Python reader/writer for Mars MoleculeArchive .yama files. ::
 
     import marspylib.yama as yama
 

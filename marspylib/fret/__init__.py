@@ -3,25 +3,23 @@ import numpy as np
 ## marspylib.fret
 
 def get_T_bleach(archive, molecule, metadata_tag_populations = ['FRET', 'AO', 'DO'], names_bleaching_events = ['Donor_Bleach', 'Acceptor_Bleach']):
-    '''
-    Function that returns the T_bleach position for a molecule.
+    """Returns the T_bleach position for a molecule.
 
-    Inputs
-    archive: the marspylib.yama.Archive the molecule belongs to.
-    molecule: the marspylib.yama.Molecule record to inspect.
-    metadata_tag_populations: default ['FRET', 'AO', 'DO'], list with strings denoting the tags present in the
-        archive to tag molecules displaying FRET behavior, that have an acceptor only (AO) or donor only (DO).
-        Note: names have to be entered in the specific order (FRET name, AO name, DO name).
-    names_bleaching_events: default ['Donor_Bleach', 'Acceptor_Bleach'], list with strings denoting the position
-        names of the donor and bleaching events in the archive.
-        Note: names have to be entered in the specific order (Donor bleaching name, Acceptor bleaching name).
+    Args:
+        archive: The marspylib.yama.Archive the molecule belongs to.
+        molecule: The marspylib.yama.Molecule record to inspect.
+        metadata_tag_populations: Tags present in the archive denoting molecules displaying FRET
+            behavior, that have an acceptor only (AO), or donor only (DO), in that order.
+            Defaults to ['FRET', 'AO', 'DO'].
+        names_bleaching_events: Position names of the donor and acceptor bleaching events in the
+            archive, in that order. Defaults to ['Donor_Bleach', 'Acceptor_Bleach'].
 
-    Outputs
-    T_bleach: the T-position of the bleaching point where either one of the dyes (donor or acceptor) has bleached.
-        Numerical value.
+    Returns:
+        T_bleach: the T-position of the bleaching point where either one of the dyes (donor or
+        acceptor) has bleached. Numerical value.
 
-    @Author: Nadia M. Huisjes
-    '''
+    Author: Nadia M. Huisjes
+    """
     if (archive.metadata_has_tag(molecule.metadata_uid, metadata_tag_populations[0])):
                 if (molecule.has_position(names_bleaching_events[1]) & molecule.has_position(names_bleaching_events[0])):
                     T_AO_bleach = molecule.get_position(names_bleaching_events[1]).position
@@ -48,26 +46,28 @@ def get_T_bleach(archive, molecule, metadata_tag_populations = ['FRET', 'AO', 'D
 
 
 def get_acceptor_donor_bleach_fret(archive, molecule, metadata_tag_fret = 'FRET', names_bleaching_events = ['Donor_Bleach', 'Acceptor_Bleach']):
-    '''
-    Function that returns the T_bleach position for a molecule. IMPORTANT: both bleaching positions are only retrieved
-        in the case the molecule has a metadata tag representing a FRET molecule.
+    """Returns the T_bleach position for a molecule.
 
-    Inputs
-    archive: the marspylib.yama.Archive the molecule belongs to.
-    molecule: the marspylib.yama.Molecule record to inspect.
-    metadata_tag_fret: default 'FRET', string denoting the tags present in the archive to tag molecules displaying
-        FRET behavior.
-    names_bleaching_events: default ['Donor_Bleach', 'Acceptor_Bleach'], list with strings denoting the position
-        names of the donor and bleaching events in the archive.
-        Note: names have to be entered in the specific order (Donor bleaching name, Acceptor bleaching name).
+    IMPORTANT: both bleaching positions are only retrieved if the molecule has a metadata tag
+    representing a FRET molecule.
 
-    Outputs (tuple with the following three parameters)
-    T_bleach: the T-position of the bleaching point where there first dye has bleached. Numerical value.
-    T_second_bleach:the T-position of the bleaching point where there second dye has bleached. Numerical value.
-    dye: list with one string representing which dye is associated with the defined T_bleach
+    Args:
+        archive: The marspylib.yama.Archive the molecule belongs to.
+        molecule: The marspylib.yama.Molecule record to inspect.
+        metadata_tag_fret: Tag present in the archive denoting molecules displaying FRET behavior.
+            Defaults to 'FRET'.
+        names_bleaching_events: Position names of the donor and acceptor bleaching events in the
+            archive, in that order. Defaults to ['Donor_Bleach', 'Acceptor_Bleach'].
 
-    @Author: Nadia M. Huisjes
-    '''
+    Returns:
+        A tuple of three values:
+
+        - T_bleach: the T-position of the bleaching point where the first dye has bleached. Numerical value.
+        - T_second_bleach: the T-position of the bleaching point where the second dye has bleached. Numerical value.
+        - dye: list with one string representing which dye is associated with the defined T_bleach.
+
+    Author: Nadia M. Huisjes
+    """
 
     if (archive.metadata_has_tag(molecule.metadata_uid, metadata_tag_fret)):
                 if (molecule.has_position(names_bleaching_events[1]) & molecule.has_position(names_bleaching_events[0])):
