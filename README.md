@@ -1,6 +1,10 @@
 **Mars** - **M**olecule **AR**chive **S**uite
 
 [![Documentation](https://readthedocs.org/projects/marspylib/badge/?version=latest)](https://marspylib.readthedocs.io/en/latest/?badge=latest)
+[![PyPI](https://img.shields.io/pypi/v/marspylib.svg)](https://pypi.org/project/marspylib/)
+[![Conda Version](https://img.shields.io/conda/vn/conda-forge/marspylib.svg)](https://anaconda.org/conda-forge/marspylib)
+[![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/marspylib.svg)](https://anaconda.org/conda-forge/marspylib)
+[![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/marspylib.svg)](https://anaconda.org/conda-forge/marspylib)
 
 Pure-Python library for reading and writing Mars Molecule Archives (`.yama`)
 and utility functions for working with them — no JVM, no Fiji install
@@ -13,10 +17,14 @@ with mars data structures in python can be found at
 ## Installation
 
 ```
-pip install marspylib
+conda install -c conda-forge marspylib
 ```
 
-This project should soon be available for installation through [conda forge](https://github.com/conda-forge/staged-recipes/pull/18733).
+or
+
+```
+pip install marspylib
+```
 
 Only dependency requirements are `numpy`, `pandas`, and `matplotlib` — this
 package can be installed in any plain Python/conda environment and does not
